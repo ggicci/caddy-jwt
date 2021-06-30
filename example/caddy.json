@@ -1,13 +1,31 @@
 {
-  "http": {
-    "servers": {
-      "srv0": {
-        "listen": ["8080"],
-        "routes": [
-          {
-            // TODO
-          }
-        ]
+  "apps": {
+    "http": {
+      "servers": {
+        "srv0": {
+          "listen": [":8080"],
+          "automatic_https": { "disable": true },
+          "routes": [
+            {
+              "match": [{ "host": ["localhost"] }],
+              "terminal": true,
+              "handle": [
+                {
+                  "handler": "authentication",
+                  "providers": {
+                    "jwt": {
+                      "mode": "api",
+                      "api": {
+                        "endpoint": "http://127.0.0.1:2546/v1/auth",
+                        "method": "HEAD"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
       }
     }
   }
