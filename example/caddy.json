@@ -1,0 +1,14 @@
+{
+  "http": {
+    "servers": {
+      "srv0": {
+        "listen": ["8080"],
+        "routes": [
+          {
+            // TODO
+          }
+        ]
+      }
+    }
+  }
+}

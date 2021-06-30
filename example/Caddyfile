@@ -1,0 +1,19 @@
+localhost:8080 {
+  http.authentication.providers.jwt {
+    mode internal
+    internal {
+      algo sha256
+      claims 
+    }
+  }
+}
+
+localhost:8081 {
+  http.authentication.providers.jwt {
+    mode api
+    api {
+      endpoint http://127.0.0.1:2546/v1/auth
+      method HEAD
+    }
+  }
+}
