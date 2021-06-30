@@ -1,6 +1,7 @@
 package caddyjwt
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
@@ -24,8 +25,7 @@ func (JWTAuth) CaddyModule() caddy.ModuleInfo {
 }
 
 func (ja *JWTAuth) Provision(ctx caddy.Context) error {
-	// TODO
-	return nil
+	return errors.New("not implemented")
 }
 
 // Authenticate validates the JWT in the request and returns the user, if valid.
