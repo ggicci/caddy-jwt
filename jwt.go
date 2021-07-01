@@ -7,33 +7,31 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/caddyauth"
+	"go.uber.org/zap"
 )
 
 func init() {
 	caddy.RegisterModule(JWTAuth{})
 }
 
+type User = caddyauth.User
+
 const (
 	ModeAPI      = "api"
 	ModeInternal = "internal"
 )
 
-type User = caddyauth.User
+var (
+	ErrUnrecognizedMode = errors.New("unrecognized mode")
+)
 
 // JWTAuth facilitates JWT (JSON Web Token) authentication.
 type JWTAuth struct {
-	Mode     string                     `json:"mode"`
-	API      *JWTAuthAPIModeConfig      `json:"api,omitempty"`
-	Internal *JWTAuthInternalModeConfig `json:"internal,omitempty"`
-}
+	Mode     string        `json:"mode"`
+	API      *APIMode      `json:"api,omitempty"`
+	Internal *InternalMode `json:"internal,omitempty"`
 
-type JWTAuthAPIModeConfig struct {
-	Endpoint string `json:"endpoint"`
-	Method   string `json:"method"`
-}
-
-type JWTAuthInternalModeConfig struct {
-	// TODO
+	logger *zap.Logger
 }
 
 func (JWTAuth) CaddyModule() caddy.ModuleInfo {
@@ -44,17 +42,30 @@ func (JWTAuth) CaddyModule() caddy.ModuleInfo {
 }
 
 func (ja *JWTAuth) Provision(ctx caddy.Context) error {
+	ja.logger = ctx.Logger(ja)
+	return nil
+}
+
+// Authenticate validates the JWT in the request and returns the user, if valid.
+func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, bool, error) {
+	switch ja.Mode {
+	case ModeAPI:
+		ja.API.logger = ja.logger
+		return ja.API.Authenticate(rw, r)
+	case ModeInternal:
+		ja.Internal.logger = ja.logger
+		return ja.Internal.Authenticate(rw, r)
+	}
+	return User{}, false, ErrUnrecognizedMode
+}
+
+// Validate implements caddy.Validator interface.
+func (ja *JWTAuth) Validate() error {
 	return fastFail(
 		ja.validateMode,
 		ja.validateApiModeConfig,
 		ja.validateInternalModeConfig,
 	)
-}
-
-// Authenticate validates the JWT in the request and returns the user, if valid.
-func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, bool, error) {
-	// TODO(ggicci): implement api mode (reverse proxy).
-	return User{}, false, errors.New("expired")
 }
 
 func (ja *JWTAuth) validateMode() error {
@@ -64,7 +75,7 @@ func (ja *JWTAuth) validateMode() error {
 	if ja.Mode == ModeAPI || ja.Mode == ModeInternal {
 		return nil
 	}
-	return fmt.Errorf("unrecognized mode: %s", ja.Mode)
+	return ErrUnrecognizedMode
 }
 
 func (ja *JWTAuth) validateApiModeConfig() error {
@@ -73,6 +84,9 @@ func (ja *JWTAuth) validateApiModeConfig() error {
 	}
 	if ja.API == nil {
 		return errors.New("api config is required")
+	}
+	if err := ja.API.validate(); err != nil {
+		return fmt.Errorf("api: %w", err)
 	}
 	return nil
 }
@@ -83,6 +97,9 @@ func (ja *JWTAuth) validateInternalModeConfig() error {
 	}
 	if ja.Internal == nil {
 		return errors.New("internal config is required")
+	}
+	if err := ja.Internal.validate(); err != nil {
+		return fmt.Errorf("internal: %w", err)
 	}
 	return nil
 }
@@ -99,5 +116,6 @@ func fastFail(validators ...func() error) error {
 // Interface guards
 var (
 	_ caddy.Provisioner       = (*JWTAuth)(nil)
+	_ caddy.Validator         = (*JWTAuth)(nil)
 	_ caddyauth.Authenticator = (*JWTAuth)(nil)
 )
