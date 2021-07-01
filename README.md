@@ -31,6 +31,18 @@ curl -v -H"X-Api-Token: ${TEST_TOKEN}" "http://localhost:8080"
 curl -v -H"Authorization: Bearer ${TEST_TOKEN}" "http://localhost:8080"
 ```
 
+NOTE: you can decode the `${TEST_TOKEN}` above at [jwt.io](https://jwt.io/) to get human readable payload as follows:
+
+```json
+{
+  "exp": 1655892670,
+  "jti": "82294a63-9660-4c62-a8a8-5a6265efcd4e",
+  "uid": 3406327963516932,
+  "username": "ggicci",
+  "nsid": 3406330157137926
+}
+```
+
 ## Configuration
 
 This module works as a provider to Caddy's [Authentication](https://caddyserver.com/docs/modules/http.handlers.authentication) handler:
