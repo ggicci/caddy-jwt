@@ -20,12 +20,18 @@
                         "method": "HEAD"
                       },
                       "internal": {
-                        "sign_key": "3OKI%06Y9zwasOS$x84T@W&E85p*fs4l",
+                        "sign_key": "NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY",
                         "from_query": ["access_token"],
+                        "from_header": ["X-Api-Token"],
                         "user_claims": ["aud", "uid", "username"]
                       }
                     }
                   }
+                },
+                {
+                  "handler": "static_response",
+                  "status_code": 200,
+                  "body": "User Authenticated with ID: {http.auth.user.id}"
                 }
               ]
             }
