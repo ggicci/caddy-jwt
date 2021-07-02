@@ -1,6 +1,6 @@
 # caddy-jwt
 
-A Caddy HTTP Authentication Provider - who Facilitates JWT Authentication
+A Caddy HTTP Module - who Facilitates **JWT Authentication**
 
 This module fulfilled [`http.handlers.authentication`](https://caddyserver.com/docs/modules/http.handlers.authentication) middleware as a provider named `jwt`.
 
@@ -14,11 +14,11 @@ xcaddy --with github.com/ggicci/caddy-jwt
 
 ## Quick View
 
-You can play this module with the example configuration under the [example](./example) folder.
-
 ```bash
 git clone https://github.com/ggicci/caddy-jwt.git
 cd caddy-jwt
+
+# Build a caddy with this module and run an example server at localhost.
 make example
 
 TEST_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2NTU4OTI2NzAsImp0aSI6IjgyMjk0YTYzLTk2NjAtNGM2Mi1hOGE4LTVhNjI2NWVmY2Q0ZSIsInVpZCI6MzQwNjMyNzk2MzUxNjkzMiwidXNlcm5hbWUiOiJnZ2ljY2kiLCJuc2lkIjozNDA2MzMwMTU3MTM3OTI2fQ.HWHw4qX4OGgCyNNa5En_siktjpoulTNwABXpEwQI4Q8
@@ -33,7 +33,7 @@ curl -v -H"X-Api-Token: ${TEST_TOKEN}" "http://localhost:8080"
 curl -v -H"Authorization: Bearer ${TEST_TOKEN}" "http://localhost:8080"
 ```
 
-NOTE: you can decode the `${TEST_TOKEN}` above at [jwt.io](https://jwt.io/) to get human readable payload as follows:
+**NOTE**: you can decode the `${TEST_TOKEN}` above at [jwt.io](https://jwt.io/) to get human readable payload as follows:
 
 ```json
 {
@@ -46,6 +46,8 @@ NOTE: you can decode the `${TEST_TOKEN}` above at [jwt.io](https://jwt.io/) to g
 ```
 
 ## Configurations
+
+Sample configuration (find more under [example](./example)):
 
 ```Caddyfile
 http://localhost:8080 {
@@ -63,8 +65,6 @@ http://localhost:8080 {
 	}
 }
 ```
-
-Find more sample configurations under the [example](./example) folder.
 
 ### Internal Mode
 
