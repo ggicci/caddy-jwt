@@ -31,6 +31,7 @@ type JWTAuth struct {
 	logger *zap.Logger
 }
 
+// CaddyModule implements caddy.Module interface.
 func (JWTAuth) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "http.authentication.providers.jwt",
@@ -38,6 +39,7 @@ func (JWTAuth) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision implements caddy.Provisioner interface.
 func (ja *JWTAuth) Provision(ctx caddy.Context) error {
 	ja.logger = ctx.Logger(ja)
 	return nil
@@ -151,7 +153,14 @@ func getUserID(claims MapClaims, names []string) (string, string) {
 }
 
 func desensitizedTokenString(token string) string {
-	return token[:16] + "…" + token[len(token)-16:]
+	if len(token) <= 6 {
+		return token
+	}
+	mask := len(token) / 3
+	if mask > 16 {
+		mask = 16
+	}
+	return token[:mask] + "…" + token[len(token)-mask:]
 }
 
 // Interface guards
