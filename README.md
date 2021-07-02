@@ -2,7 +2,9 @@
 
 A Caddy HTTP Authentication Provider - who Facilitates JWT Authentication
 
-This module fulfilled [`http.handlers.authentication`](https://caddyserver.com/docs/modules/http.handlers.authentication) middleware under namespace `http.authentication.providers`.
+This module fulfilled [`http.handlers.authentication`](https://caddyserver.com/docs/modules/http.handlers.authentication) middleware as a provider named `jwt`.
+
+[Documentation](https://caddyserver.com/docs/modules/http.authentication.providers.jwt)
 
 ## Install
 
@@ -10,7 +12,7 @@ This module fulfilled [`http.handlers.authentication`](https://caddyserver.com/d
 xcaddy --with github.com/ggicci/caddy-jwt
 ```
 
-## Playground
+## Quick View
 
 You can play this module with the example configuration under the [example](./example) folder.
 
@@ -43,35 +45,30 @@ NOTE: you can decode the `${TEST_TOKEN}` above at [jwt.io](https://jwt.io/) to g
 }
 ```
 
-## Configuration
+## Configurations
 
-This module works as a provider to Caddy's [Authentication](https://caddyserver.com/docs/modules/http.handlers.authentication) handler:
-
-```json
-{
-  "handler": "authentication",
-  "providers": {
-    "jwt": {
-      "mode": "internal",
-      "internal": {
-        "sign_key": "NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY",
-        "from_header": ["X-Api-Token", "Authorization"],
-        "from_query": ["access_token", "token"],
-        "header_first": true,
-        "user_claims": ["aud", "uid", "username"]
-      },
-      "api": {
-        "endpoint": "http://127.0.0.1:2546/v1/auth",
-        "method": "HEAD"
-      }
-    }
-  }
+```Caddyfile
+http://localhost:8080 {
+	route * {
+		jwtauth internal {
+			sign_key NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY
+			from_query access_token token
+			from_header X-Api-Token
+			header_first true
+			user_claims aud uid user_id username login
+		}
+		respond 200 {
+			body "User Authenticated with ID: {http.auth.user.id}"
+		}
+	}
 }
 ```
 
+Find more sample configurations under the [example](./example) folder.
+
 ### Internal Mode
 
-When `mode` set to `"internal"`. This module behaves as a "JWT Validator". Who
+When `mode` set to `"internal"`, this module will behave like a "JWT Validator". Who
 
 1. Extract the token from the header or query from the HTTP request.
 2. Validate the token by using the `sign_key`.
@@ -82,12 +79,6 @@ When `mode` set to `"internal"`. This module behaves as a "JWT Validator". Who
 
 ### API Mode
 
-When `mode` set to `"api"`. This module behaves as a "Reverse Proxy" to the authentication API. Who
+When `mode` set to `"api"`, this module will behave like a "Reverse Proxy" with its upstream set to a specific API for authentication. Who
 
 1. Not Implemented
-
-## TODO
-
-- [ ] Implement the "API" mode
-- [ ] Create a `jwt` directive to support Caddyfile
-- [ ] Add documentation under [Caddy Modules](https://caddyserver.com/docs/modules/) named `http.authentication.providers.jwt`

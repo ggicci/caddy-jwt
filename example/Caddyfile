@@ -1,19 +1,14 @@
-localhost:8080 {
-  http.authentication.providers.jwt {
-    mode internal
-    internal {
-      algo sha256
-      claims 
-    }
-  }
-}
-
-localhost:8081 {
-  http.authentication.providers.jwt {
-    mode api
-    api {
-      endpoint http://127.0.0.1:2546/v1/auth
-      method HEAD
-    }
-  }
+http://localhost:8080 {
+	route * {
+		jwtauth internal {
+			sign_key NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY
+			from_query access_token token
+			from_header X-Api-Token
+			header_first true
+			user_claims aud uid user_id username login
+		}
+		respond 200 {
+			body "User Authenticated with ID: {http.auth.user.id}"
+		}
+	}
 }
