@@ -50,25 +50,21 @@ curl -v -H"Authorization: Bearer ${TEST_TOKEN}" "http://localhost:8080"
 Sample configuration (find more under [example](./example)):
 
 ```Caddyfile
-http://localhost:8080 {
+api.example.com {
 	route * {
-		jwtauth internal {
+		jwtauth {
 			sign_key NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY
 			from_query access_token token
 			from_header X-Api-Token
 			header_first true
 			user_claims aud uid user_id username login
 		}
-		respond 200 {
-			body "User Authenticated with ID: {http.auth.user.id}"
-		}
+		reverse_proxy http://172.16.0.14:8080
 	}
 }
 ```
 
-### Internal Mode
-
-When `mode` set to `"internal"`, this module will behave like a "JWT Validator". Who
+This module behaves like a "JWT Validator". Who
 
 1. Extract the token from the header or query from the HTTP request.
 2. Validate the token by using the `sign_key`.
@@ -76,9 +72,3 @@ When `mode` set to `"internal"`, this module will behave like a "JWT Validator".
 4. Get user id by inspecting the claims defined by `user_claims`.
 5. If no valid user id (non-empty string) found, auth **failed** with `401`. Otherwise, next.
 6. Return the user id to Caddy's authentication handler, and the context value `{http.auth.user.id}` got set.
-
-### API Mode
-
-When `mode` set to `"api"`, this module will behave like a "Reverse Proxy" with its upstream set to a specific API for authentication. Who
-
-1. Not Implemented

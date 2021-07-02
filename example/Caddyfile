@@ -1,6 +1,6 @@
 http://localhost:8080 {
 	route * {
-		jwtauth internal {
+		jwtauth {
 			sign_key NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY
 			from_query access_token token
 			from_header X-Api-Token

@@ -1,12 +1,14 @@
 package caddyjwt
 
 import (
+	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/caddyauth"
+	"github.com/golang-jwt/jwt"
 	"go.uber.org/zap"
 )
 
@@ -15,21 +17,16 @@ func init() {
 }
 
 type User = caddyauth.User
-
-const (
-	ModeAPI      = "api"
-	ModeInternal = "internal"
-)
-
-var (
-	ErrUnrecognizedMode = errors.New("unrecognized mode")
-)
+type Token = jwt.Token
+type MapClaims = jwt.MapClaims
 
 // JWTAuth facilitates JWT (JSON Web Token) authentication.
 type JWTAuth struct {
-	Mode     string        `json:"mode"`
-	API      *APIMode      `json:"api,omitempty"`
-	Internal *InternalMode `json:"internal,omitempty"`
+	SignKey     string   `json:"sign_key"`
+	FromHeader  []string `json:"from_header"`
+	FromQuery   []string `json:"from_query"`
+	HeaderFirst bool     `json:"header_first"`
+	UserClaims  []string `json:"user_claims"`
 
 	logger *zap.Logger
 }
@@ -46,71 +43,115 @@ func (ja *JWTAuth) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// Authenticate validates the JWT in the request and returns the user, if valid.
-func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, bool, error) {
-	switch ja.Mode {
-	case ModeAPI:
-		ja.API.logger = ja.logger
-		return ja.API.Authenticate(rw, r)
-	case ModeInternal:
-		ja.Internal.logger = ja.logger
-		return ja.Internal.Authenticate(rw, r)
-	}
-	return User{}, false, ErrUnrecognizedMode
-}
-
 // Validate implements caddy.Validator interface.
 func (ja *JWTAuth) Validate() error {
-	return fastFail(
-		ja.validateMode,
-		ja.validateApiModeConfig,
-		ja.validateInternalModeConfig,
-	)
-}
-
-func (ja *JWTAuth) validateMode() error {
-	if ja.Mode == "" {
-		ja.Mode = ModeInternal
+	if ja.SignKey == "" {
+		return errors.New("sign_key is required")
 	}
-	if ja.Mode == ModeAPI || ja.Mode == ModeInternal {
-		return nil
-	}
-	return ErrUnrecognizedMode
-}
-
-func (ja *JWTAuth) validateApiModeConfig() error {
-	if ja.Mode != ModeAPI {
-		return nil
-	}
-	if ja.API == nil {
-		return errors.New("api config is required")
-	}
-	if err := ja.API.validate(); err != nil {
-		return fmt.Errorf("api: %w", err)
-	}
-	return nil
-}
-
-func (ja *JWTAuth) validateInternalModeConfig() error {
-	if ja.Mode != ModeInternal {
-		return nil
-	}
-	if ja.Internal == nil {
-		return errors.New("internal config is required")
-	}
-	if err := ja.Internal.validate(); err != nil {
-		return fmt.Errorf("internal: %w", err)
-	}
-	return nil
-}
-
-func fastFail(validators ...func() error) error {
-	for _, validate := range validators {
-		if err := validate(); err != nil {
-			return err
+	if len(ja.UserClaims) == 0 {
+		ja.UserClaims = []string{
+			// "aud" (the audience) is a reserved claim name
+			// https://datatracker.ietf.org/doc/html/rfc7519#section-4.1
+			"aud",
 		}
 	}
 	return nil
+}
+
+// Authenticate validates the JWT in the request and returns the user, if valid.
+func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, bool, error) {
+	var candidates []string
+
+	if ja.HeaderFirst {
+		candidates = append(candidates, getTokensFromHeader(r, ja.FromHeader)...)
+		candidates = append(candidates, getTokensFromQuery(r, ja.FromQuery)...)
+	} else {
+		candidates = append(candidates, getTokensFromQuery(r, ja.FromQuery)...)
+		candidates = append(candidates, getTokensFromHeader(r, ja.FromHeader)...)
+	}
+	candidates = append(candidates, getTokensFromHeader(r, []string{"Authorization"})...)
+	checked := make(map[string]struct{})
+	parser := &jwt.Parser{
+		UseJSONNumber: true, // parse number in JSON object to json.Number instead of float64
+	}
+
+	for _, candidateToken := range candidates {
+		tokenString := normToken(candidateToken)
+		if _, ok := checked[tokenString]; ok {
+			continue
+		}
+
+		gotToken, err := parser.Parse(tokenString, func(*Token) (interface{}, error) {
+			return []byte(ja.SignKey), nil
+		})
+		checked[tokenString] = struct{}{}
+
+		logger := ja.logger.With(zap.String("token_string", desensitizedTokenString(tokenString)))
+		if err != nil || !gotToken.Valid {
+			logger.Error("invalid token", zap.NamedError("error", err))
+			continue
+		}
+
+		// The token is valid. Continue to check the user claim.
+		claimName, gotUserID := getUserID(gotToken.Claims.(MapClaims), ja.UserClaims)
+		if gotUserID == "" {
+			logger.Error("invalid user claim", zap.Strings("user_claims", ja.UserClaims))
+			continue
+		}
+
+		// Successfully authenticated!
+		logger.Info("user authenticated", zap.String("user_claim", claimName), zap.String("id_value", gotUserID))
+		return User{ID: gotUserID}, true, nil
+	}
+
+	return User{}, false, nil
+}
+
+func normToken(token string) string {
+	if strings.HasPrefix(strings.ToLower(token), "bearer ") {
+		token = token[len("bearer "):]
+	}
+	return strings.TrimSpace(token)
+}
+
+func getTokensFromHeader(r *http.Request, names []string) []string {
+	tokens := make([]string, 0)
+	for _, key := range names {
+		token := r.Header.Get(key)
+		if token != "" {
+			tokens = append(tokens, token)
+		}
+	}
+	return tokens
+}
+
+func getTokensFromQuery(r *http.Request, names []string) []string {
+	tokens := make([]string, 0)
+	for _, key := range names {
+		token := r.FormValue(key)
+		if token != "" {
+			tokens = append(tokens, token)
+		}
+	}
+	return tokens
+}
+
+func getUserID(claims MapClaims, names []string) (string, string) {
+	for _, name := range names {
+		if userClaim, ok := claims[name]; ok {
+			switch val := userClaim.(type) {
+			case string:
+				return name, val
+			case json.Number:
+				return name, val.String()
+			}
+		}
+	}
+	return "", ""
+}
+
+func desensitizedTokenString(token string) string {
+	return token[:16] + "…" + token[len(token)-16:]
 }
 
 // Interface guards

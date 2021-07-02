@@ -11,7 +11,7 @@ GOCOVER=$(GO) tool cover
 XCADDY=xcaddy
 
 example:
-	$(XCADDY) run -config=example/Caddyfile
+	$(XCADDY) run -config=example/caddy.json
 
 debug:
 	$(XCADDY) build --debug --with github.com/ggicci/caddy-jwt=$(shell pwd)
