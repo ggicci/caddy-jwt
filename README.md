@@ -1,6 +1,6 @@
 # caddy-jwt
 
-![Go Workflow](https://github.com/ggicci/caddy-jwt/actions/workflows/go.yml/badge.svg) [![Go Reference](https://pkg.go.dev/badge/github.com/ggicci/caddy-jwt.svg)](https://pkg.go.dev/github.com/ggicci/caddy-jwt)
+![Go Workflow](https://github.com/ggicci/caddy-jwt/actions/workflows/go.yml/badge.svg) [![codecov](https://codecov.io/gh/ggicci/caddy-jwt/branch/main/graph/badge.svg?token=4V9OX8WFAW)](https://codecov.io/gh/ggicci/caddy-jwt) [![Go Reference](https://pkg.go.dev/badge/github.com/ggicci/caddy-jwt.svg)](https://pkg.go.dev/github.com/ggicci/caddy-jwt)
 
 A Caddy HTTP Module - who Facilitates **JWT Authentication**
 
