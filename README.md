@@ -1,5 +1,7 @@
 # caddy-jwt
 
+![Go Workflow](https://github.com/ggicci/caddy-jwt/actions/workflows/go.yml/badge.svg) [![Go Reference](https://pkg.go.dev/badge/github.com/ggicci/caddy-jwt.svg)](https://pkg.go.dev/github.com/ggicci/caddy-jwt)
+
 A Caddy HTTP Module - who Facilitates **JWT Authentication**
 
 This module fulfilled [`http.handlers.authentication`](https://caddyserver.com/docs/modules/http.handlers.authentication) middleware as a provider named `jwt`.
