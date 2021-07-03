@@ -22,11 +22,32 @@ type MapClaims = jwt.MapClaims
 
 // JWTAuth facilitates JWT (JSON Web Token) authentication.
 type JWTAuth struct {
-	SignKey     string   `json:"sign_key"`
-	FromHeader  []string `json:"from_header"`
-	FromQuery   []string `json:"from_query"`
-	HeaderFirst bool     `json:"header_first"`
-	UserClaims  []string `json:"user_claims"`
+	// SignKey is the key used by the signing algorithm to verify the signature.
+	SignKey string `json:"sign_key"`
+
+	// FromHeader defines a list of keys saying from which the token may be
+	// located in the header of an HTTP request. If multiple keys were given,
+	// all the corresponding header values will be treated as candidate tokens.
+	// And we will verify each of them until we got a valid one.
+	FromHeader []string `json:"from_header"`
+
+	// FromQuery works like FromHeader. But defines a list of parameters to get
+	// tokens from a URL query.
+	FromQuery []string `json:"from_query"`
+
+	// HeaderFirst indicates whether we should verify header tokens first or not.
+	// Tokens from the URL query are verified firstly by default.
+	HeaderFirst bool `json:"header_first"`
+
+	// UserClaims defines a list of names to find the ID of the authenticated user.
+	// By default, this config will be set to []string{"aud"}.
+	// Where "aud" is a reserved name in RFC7519 indicating the audience of a token.
+	// If multiple names given, we will try to get the value of each name from
+	// the JWT payload and use the first non-empty one as the ID of the authenticated
+	// user. If valid, the placeholder {http.auth.user.id} will be set to the ID.
+	// For example, []string{"uid", "username"} will set "eva" as the final user ID
+	// from JWT payload: { "username": "eva"  }.
+	UserClaims []string `json:"user_claims"`
 
 	logger *zap.Logger
 }
