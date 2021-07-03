@@ -42,13 +42,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					return nil, h.Errf("invalid header_first")
 				}
 				if ja.HeaderFirst, err = strconv.ParseBool(headerFirst); err != nil {
-					return nil, h.Errf("invalid header_first value")
+					return nil, h.Errf("invalid header_first")
 				}
 			case "user_claims":
 				ja.UserClaims = h.RemainingArgs()
 			default:
 				return nil, h.Errf("unrecognized option: %s", opt)
-
 			}
 		}
 	}

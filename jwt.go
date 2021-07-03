@@ -62,7 +62,11 @@ func (ja *JWTAuth) Validate() error {
 
 // Authenticate validates the JWT in the request and returns the user, if valid.
 func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, bool, error) {
-	var candidates []string
+	var (
+		candidates []string
+		gotToken   *Token
+		err        error
+	)
 
 	if ja.HeaderFirst {
 		candidates = append(candidates, getTokensFromHeader(r, ja.FromHeader)...)
@@ -83,13 +87,13 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 			continue
 		}
 
-		gotToken, err := parser.Parse(tokenString, func(*Token) (interface{}, error) {
+		gotToken, err = parser.Parse(tokenString, func(*Token) (interface{}, error) {
 			return []byte(ja.SignKey), nil
 		})
 		checked[tokenString] = struct{}{}
 
 		logger := ja.logger.With(zap.String("token_string", desensitizedTokenString(tokenString)))
-		if err != nil || !gotToken.Valid {
+		if err != nil {
 			logger.Error("invalid token", zap.NamedError("error", err))
 			continue
 		}
@@ -97,7 +101,8 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 		// The token is valid. Continue to check the user claim.
 		claimName, gotUserID := getUserID(gotToken.Claims.(MapClaims), ja.UserClaims)
 		if gotUserID == "" {
-			logger.Error("invalid user claim", zap.Strings("user_claims", ja.UserClaims))
+			err = errors.New("empty user claim")
+			logger.Error("invalid token", zap.Strings("user_claims", ja.UserClaims), zap.NamedError("error", err))
 			continue
 		}
 
@@ -106,7 +111,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 		return User{ID: gotUserID}, true, nil
 	}
 
-	return User{}, false, nil
+	return User{}, false, err
 }
 
 func normToken(token string) string {
