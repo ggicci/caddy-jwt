@@ -17,7 +17,7 @@ func TestParsingCaddyfileNormalCase(t *testing.T) {
 		sign_key "NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY"
 		from_query access_token token _tok
 		from_header X-Api-Key
-		header_first true
+		from_cookies user_session SESSID
 		user_claims uid user_id login username
 	}
 	`),
@@ -26,7 +26,7 @@ func TestParsingCaddyfileNormalCase(t *testing.T) {
 		SignKey:     "NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY",
 		FromQuery:   []string{"access_token", "token", "_tok"},
 		FromHeader:  []string{"X-Api-Key"},
-		HeaderFirst: true,
+		FromCookies: []string{"user_session", "SESSID"},
 		UserClaims:  []string{"uid", "user_id", "login", "username"},
 	}
 
@@ -53,30 +53,17 @@ func TestParsingCaddyfileError(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "sign_key")
 
-	// header_first requires exactly 1 arg
+	// header_first is deprecated
 	helper = httpcaddyfile.Helper{
 		Dispenser: caddyfile.NewTestDispenser(`
 	jwtauth {
-		header_first true false
-	}
-	`),
-	}
-
-	_, err = parseCaddyfile(helper)
-	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), "header_first")
-
-	// header_first pasre boolean failed
-	helper = httpcaddyfile.Helper{
-		Dispenser: caddyfile.NewTestDispenser(`
-	jwtauth {
-		header_first "not_sure"
+		header_first true
 	}
 	`),
 	}
 	_, err = parseCaddyfile(helper)
 	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), "header_first")
+	assert.Contains(t, err.Error(), "deprecated")
 
 	// unrecognized option
 	helper = httpcaddyfile.Helper{

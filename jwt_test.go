@@ -142,46 +142,22 @@ func TestAuthenticate_FromQuery(t *testing.T) {
 	assert.NotEqual(t, User{ID: "ggicci"}, gotUser)
 }
 
-func TestAuthenticate_HeaderFirst(t *testing.T) {
-	var (
-		claimsInQuery  = MapClaims{"aud": "ggicci"}
-		claimsInHeader = MapClaims{"aud": "ivan"}
-		queryToken     = issueTokenString(claimsInQuery)
-		headerToken    = issueTokenString(claimsInHeader)
-	)
-
-	// by default, query first
+func TestAuthenticate_FromCookies(t *testing.T) {
+	claims := MapClaims{"aud": "ggicci"}
 	ja := &JWTAuth{
-		SignKey:   TestSignKey,
-		FromQuery: []string{"access_token"},
-		logger:    testLogger,
+		SignKey:     TestSignKey,
+		FromCookies: []string{"user_session", "sess"},
+		logger:      testLogger,
 	}
 	assert.Nil(t, ja.Validate())
+
 	rw := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
-	params := make(url.Values)
-	params.Add("access_token", queryToken)
-	r.URL.RawQuery = params.Encode()
+	r.AddCookie(&http.Cookie{Name: "user_session", Value: issueTokenString(claims)})
 	gotUser, authenticated, err := ja.Authenticate(rw, r)
 	assert.Nil(t, err)
 	assert.True(t, authenticated)
 	assert.Equal(t, User{ID: "ggicci"}, gotUser)
-
-	// header first by setting "header_first" to true
-	ja = &JWTAuth{
-		SignKey:     TestSignKey,
-		FromQuery:   []string{"access_token"},
-		HeaderFirst: true,
-		logger:      testLogger,
-	}
-	assert.Nil(t, ja.Validate())
-	rw = httptest.NewRecorder()
-	r, _ = http.NewRequest("GET", "/", nil)
-	r.Header.Add("Authorization", "Bearer "+headerToken)
-	gotUser, authenticated, err = ja.Authenticate(rw, r)
-	assert.Nil(t, err)
-	assert.True(t, authenticated)
-	assert.Equal(t, User{ID: "ivan"}, gotUser)
 }
 
 func TestAuthenticate_CustomUserClaims(t *testing.T) {

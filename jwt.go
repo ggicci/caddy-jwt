@@ -25,19 +25,23 @@ type JWTAuth struct {
 	// SignKey is the key used by the signing algorithm to verify the signature.
 	SignKey string `json:"sign_key"`
 
-	// FromHeader defines a list of keys saying from which the token may be
-	// located in the header of an HTTP request. If multiple keys were given,
-	// all the corresponding header values will be treated as candidate tokens.
-	// And we will verify each of them until we got a valid one.
-	FromHeader []string `json:"from_header"`
-
-	// FromQuery works like FromHeader. But defines a list of parameters to get
-	// tokens from a URL query.
+	// FromQuery defines a list of names to get tokens from the query parameters
+	// of an HTTP request.
+	//
+	// If multiple keys were given, all the corresponding query
+	// values will be treated as candidate tokens. And we will verify each of
+	// them until we got a valid one.
+	//
+	// Priority: from_query > from_header > from_cookies.
 	FromQuery []string `json:"from_query"`
 
-	// HeaderFirst indicates whether we should verify header tokens first or not.
-	// Tokens from the URL query are verified firstly by default.
-	HeaderFirst bool `json:"header_first"`
+	// FromHeader works like FromQuery. But defines a list of names to get
+	// tokens from the HTTP header.
+	FromHeader []string `json:"from_header"`
+
+	// FromCookie works like FromQuery. But defines a list of names to get tokens
+	// from the HTTP cookies.
+	FromCookies []string `json:"from_cookies"`
 
 	// UserClaims defines a list of names to find the ID of the authenticated user.
 	// By default, this config will be set to []string{"aud"}.
@@ -89,13 +93,10 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 		err        error
 	)
 
-	if ja.HeaderFirst {
-		candidates = append(candidates, getTokensFromHeader(r, ja.FromHeader)...)
-		candidates = append(candidates, getTokensFromQuery(r, ja.FromQuery)...)
-	} else {
-		candidates = append(candidates, getTokensFromQuery(r, ja.FromQuery)...)
-		candidates = append(candidates, getTokensFromHeader(r, ja.FromHeader)...)
-	}
+	candidates = append(candidates, getTokensFromQuery(r, ja.FromQuery)...)
+	candidates = append(candidates, getTokensFromHeader(r, ja.FromHeader)...)
+	candidates = append(candidates, getTokensFromCookies(r, ja.FromCookies)...)
+
 	candidates = append(candidates, getTokensFromHeader(r, []string{"Authorization"})...)
 	checked := make(map[string]struct{})
 	parser := &jwt.Parser{
@@ -159,6 +160,16 @@ func getTokensFromQuery(r *http.Request, names []string) []string {
 		token := r.FormValue(key)
 		if token != "" {
 			tokens = append(tokens, token)
+		}
+	}
+	return tokens
+}
+
+func getTokensFromCookies(r *http.Request, names []string) []string {
+	tokens := make([]string, 0)
+	for _, key := range names {
+		if ck, err := r.Cookie(key); err == nil && ck.Value != "" {
+			tokens = append(tokens, ck.Value)
 		}
 	}
 	return tokens

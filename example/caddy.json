@@ -17,7 +17,7 @@
                       "sign_key": "NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY",
                       "from_query": ["access_token", "token"],
                       "from_header": ["X-Api-Token"],
-                      "header_first": true,
+                      "from_cookies": ["user_session"],
                       "user_claims": ["aud", "uid", "username"]
                     }
                   }

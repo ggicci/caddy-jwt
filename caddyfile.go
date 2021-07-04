@@ -1,8 +1,6 @@
 package caddyjwt
 
 import (
-	"strconv"
-
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -35,17 +33,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				ja.FromQuery = h.RemainingArgs()
 			case "from_header":
 				ja.FromHeader = h.RemainingArgs()
-			case "header_first":
-				var headerFirst string
-				var err error
-				if !h.AllArgs(&headerFirst) {
-					return nil, h.Errf("invalid header_first")
-				}
-				if ja.HeaderFirst, err = strconv.ParseBool(headerFirst); err != nil {
-					return nil, h.Errf("invalid header_first")
-				}
+			case "from_cookies":
+				ja.FromCookies = h.RemainingArgs()
 			case "user_claims":
 				ja.UserClaims = h.RemainingArgs()
+			case "header_first":
+				return nil, h.Err("option header_first deprecated, the priority now defaults to from_query > from_header > from_cookies")
 			default:
 				return nil, h.Errf("unrecognized option: %s", opt)
 			}
