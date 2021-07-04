@@ -58,7 +58,7 @@ api.example.com {
 			sign_key NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY
 			from_query access_token token
 			from_header X-Api-Token
-			header_first true
+			from_cookies user_session
 			user_claims aud uid user_id username login
 		}
 		reverse_proxy http://172.16.0.14:8080
@@ -66,9 +66,11 @@ api.example.com {
 }
 ```
 
+Priority of `from_xxx` is `from_query > from_header > from_cookies`.
+
 This module behaves like a "JWT Validator". Who
 
-1. Extract the token from the header or query from the HTTP request.
+1. Extract the token from cookies, header or query from the HTTP request.
 2. Validate the token by using the `sign_key`.
 3. If the token is invalid by any reason, auth **failed** with `401`. Otherwise, next.
 4. Get user id by inspecting the claims defined by `user_claims`.
