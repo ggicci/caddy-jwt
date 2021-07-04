@@ -10,6 +10,8 @@ This module fulfilled [`http.handlers.authentication`](https://caddyserver.com/d
 
 ## Install
 
+Build this module with `caddy` at Caddy's official [download](https://caddyserver.com/download) site. Or:
+
 ```bash
 xcaddy --with github.com/ggicci/caddy-jwt
 ```
