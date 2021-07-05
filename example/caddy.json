@@ -14,7 +14,7 @@
                   "handler": "authentication",
                   "providers": {
                     "jwt": {
-                      "sign_key": "NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY",
+                      "sign_key": "TkZMNSowQmMjOVU2RUB0bm1DJkU3U1VONkd3SGZMbVk=",
                       "from_query": ["access_token", "token"],
                       "from_header": ["X-Api-Token"],
                       "from_cookies": ["user_session"],

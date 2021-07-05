@@ -1,6 +1,8 @@
 package caddyjwt
 
 import (
+	"encoding/base64"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -26,19 +28,32 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			opt := h.Val()
 			switch opt {
 			case "sign_key":
-				if !h.AllArgs(&ja.SignKey) {
+				var signKeyString string
+				if !h.AllArgs(&signKeyString) {
 					return nil, h.Errf("invalid sign_key")
 				}
+				// Decode key from base64 to binary.
+				if key, err := base64.StdEncoding.DecodeString(signKeyString); err != nil {
+					return nil, h.Errf("invalid sign_key: %v", err)
+				} else {
+					ja.SignKey = key
+				}
+
 			case "from_query":
 				ja.FromQuery = h.RemainingArgs()
+
 			case "from_header":
 				ja.FromHeader = h.RemainingArgs()
+
 			case "from_cookies":
 				ja.FromCookies = h.RemainingArgs()
+
 			case "user_claims":
 				ja.UserClaims = h.RemainingArgs()
+
 			case "header_first":
 				return nil, h.Err("option header_first deprecated, the priority now defaults to from_query > from_header > from_cookies")
+
 			default:
 				return nil, h.Errf("unrecognized option: %s", opt)
 			}

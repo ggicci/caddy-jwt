@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 )
 
-const TestSignKey = "NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY"
+var TestSignKey = []byte("NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY")
 
 var (
 	testLogger, _ = zap.NewDevelopment()
@@ -176,11 +176,27 @@ func TestAuthenticate_CustomUserClaims(t *testing.T) {
 	assert.True(t, authenticated)
 	assert.Equal(t, User{ID: "182140474727"}, gotUser)
 
-	// custom user claims all empty should fail
+	// custom user claims all empty should fail - having keys
 	claims = MapClaims{"aud": "ggicci", "user_id": ""}
 	ja = &JWTAuth{
 		SignKey:    TestSignKey,
 		UserClaims: []string{"user_id"},
+		logger:     testLogger,
+	}
+	assert.Nil(t, ja.Validate())
+	rw = httptest.NewRecorder()
+	r, _ = http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", issueTokenString(claims))
+	gotUser, authenticated, err = ja.Authenticate(rw, r)
+	assert.NotNil(t, err)
+	assert.False(t, authenticated)
+	assert.Empty(t, gotUser.ID)
+
+	// custom user claims all empty should fail - even no keys
+	claims = MapClaims{"aud": "ggicci"}
+	ja = &JWTAuth{
+		SignKey:    TestSignKey,
+		UserClaims: []string{"uid", "user_id"},
 		logger:     testLogger,
 	}
 	assert.Nil(t, ja.Validate())

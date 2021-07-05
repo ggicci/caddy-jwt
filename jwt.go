@@ -23,7 +23,9 @@ type MapClaims = jwt.MapClaims
 // JWTAuth facilitates JWT (JSON Web Token) authentication.
 type JWTAuth struct {
 	// SignKey is the key used by the signing algorithm to verify the signature.
-	SignKey string `json:"sign_key"`
+	//
+	// Use base64 encoded string of the key bytes. It's a public key usually.
+	SignKey []byte `json:"sign_key"`
 
 	// FromQuery defines a list of names to get tokens from the query parameters
 	// of an HTTP request.
@@ -44,13 +46,18 @@ type JWTAuth struct {
 	FromCookies []string `json:"from_cookies"`
 
 	// UserClaims defines a list of names to find the ID of the authenticated user.
+	//
 	// By default, this config will be set to []string{"aud"}.
 	// Where "aud" is a reserved name in RFC7519 indicating the audience of a token.
-	// If multiple names given, we will try to get the value of each name from
-	// the JWT payload and use the first non-empty one as the ID of the authenticated
-	// user. If valid, the placeholder {http.auth.user.id} will be set to the ID.
+	//
+	// If multiple names were given, we will use the first non-empty value of the key
+	// in the JWT payload as the ID of the authenticated user. i.e. The placeholder
+	// {http.auth.user.id} will be set to the ID.
+	//
 	// For example, []string{"uid", "username"} will set "eva" as the final user ID
 	// from JWT payload: { "username": "eva"  }.
+	//
+	// If no non-empty values found, leaves it unauthenticated.
 	UserClaims []string `json:"user_claims"`
 
 	logger *zap.Logger
@@ -72,7 +79,7 @@ func (ja *JWTAuth) Provision(ctx caddy.Context) error {
 
 // Validate implements caddy.Validator interface.
 func (ja *JWTAuth) Validate() error {
-	if ja.SignKey == "" {
+	if len(ja.SignKey) == 0 {
 		return errors.New("sign_key is required")
 	}
 	if len(ja.UserClaims) == 0 {

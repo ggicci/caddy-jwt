@@ -57,7 +57,7 @@ Sample configuration (find more under [example](./example)):
 api.example.com {
 	route * {
 		jwtauth {
-			sign_key NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY
+			sign_key TkZMNSowQmMjOVU2RUB0bm1DJkU3U1VONkd3SGZMbVk=
 			from_query access_token token
 			from_header X-Api-Token
 			from_cookies user_session
@@ -68,7 +68,10 @@ api.example.com {
 }
 ```
 
-Priority of `from_xxx` is `from_query > from_header > from_cookies`.
+**NOTE**:
+
+1. Use `base64` to encode your key in the configuration.
+2. The priority of `from_xxx` is `from_query > from_header > from_cookies`.
 
 This module behaves like a "JWT Validator". Who
 
