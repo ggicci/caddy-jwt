@@ -2,6 +2,8 @@ package caddyjwt
 
 import (
 	"encoding/base64"
+	"fmt"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -51,6 +53,18 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			case "user_claims":
 				ja.UserClaims = h.RemainingArgs()
 
+			case "meta_claims":
+				ja.MetaClaims = make(map[string]string)
+				for _, metaClaim := range h.RemainingArgs() {
+					claim, placeholder, err := parseMetaClaim(metaClaim)
+					if err != nil {
+						return nil, h.Errf("invalid meta_claims: %v", err)
+					}
+					if _, ok := ja.MetaClaims[claim]; ok {
+						return nil, h.Errf("invalid meta_claims: duplicate claim: %s", claim)
+					}
+					ja.MetaClaims[claim] = placeholder
+				}
 			case "header_first":
 				return nil, h.Err("option header_first deprecated, the priority now defaults to from_query > from_header > from_cookies")
 
@@ -65,4 +79,27 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			"jwt": caddyconfig.JSON(ja, nil),
 		},
 	}, nil
+}
+
+// parseMetaClaim parses key to get the claim and corresponding placeholder.
+// e.g "IsAdmin -> is_admin" as { Claim: "IsAdmin", Placeholder: "is_admin" }.
+func parseMetaClaim(key string) (claim, placeholder string, err error) {
+	parts := strings.Split(key, "->")
+	if len(parts) == 1 {
+		claim = strings.TrimSpace(parts[0])
+		placeholder = strings.TrimSpace(parts[0])
+	} else if len(parts) == 2 {
+		claim = strings.TrimSpace(parts[0])
+		placeholder = strings.TrimSpace(parts[1])
+	} else {
+		return "", "", fmt.Errorf("too many delimiters (->) in key %q", key)
+	}
+
+	if claim == "" {
+		return "", "", fmt.Errorf("empty claim in key %q", key)
+	}
+	if placeholder == "" {
+		return "", "", fmt.Errorf("empty placeholder in key %q", key)
+	}
+	return
 }

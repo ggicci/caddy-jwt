@@ -3,8 +3,11 @@ package caddyjwt
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/caddyauth"
@@ -60,6 +63,24 @@ type JWTAuth struct {
 	// If no non-empty values found, leaves it unauthenticated.
 	UserClaims []string `json:"user_claims"`
 
+	// MetaClaims defines a map to populate {http.auth.user.*} metadata placeholders.
+	// The key is the claim in the JWT payload, the value is the placeholder name.
+	// e.g. {"IsAdmin": "is_admin"} can populate {http.auth.user.is_admin} with
+	// the value of `IsAdmin` in the JWT payload if found, otherwise "".
+	//
+	// NOTE: The name in the placeholder should be adhere to Caddy conventions
+	// (snake_casing).
+	//
+	// Caddyfile:
+	// Use syntax `<claim>[-> <placeholder>]` to define a map item. The placeholder is
+	// optional, if not specified, use the same name as the claim.
+	// e.g.
+	//
+	//     meta_claims "IsAdmin -> is_admin" "group"
+	//
+	// is equal to {"IsAdmin": "is_admin", "group": "group"}.
+	MetaClaims map[string]string `json:"meta_claims"`
+
 	logger *zap.Logger
 }
 
@@ -87,6 +108,11 @@ func (ja *JWTAuth) Validate() error {
 			// "aud" (the audience) is a reserved claim name
 			// https://datatracker.ietf.org/doc/html/rfc7519#section-4.1
 			"aud",
+		}
+	}
+	for claim, placeholder := range ja.MetaClaims {
+		if claim == "" || placeholder == "" {
+			return fmt.Errorf("invalid meta claim: %s -> %s", claim, placeholder)
 		}
 	}
 	return nil
@@ -128,7 +154,8 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 		}
 
 		// The token is valid. Continue to check the user claim.
-		claimName, gotUserID := getUserID(gotToken.Claims.(MapClaims), ja.UserClaims)
+		var gotClaims = gotToken.Claims.(MapClaims)
+		claimName, gotUserID := getUserID(gotClaims, ja.UserClaims)
 		if gotUserID == "" {
 			err = errors.New("empty user claim")
 			logger.Error("invalid token", zap.Strings("user_claims", ja.UserClaims), zap.NamedError("error", err))
@@ -136,8 +163,12 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 		}
 
 		// Successfully authenticated!
-		logger.Info("user authenticated", zap.String("user_claim", claimName), zap.String("id_value", gotUserID))
-		return User{ID: gotUserID}, true, nil
+		var user = User{
+			ID:       gotUserID,
+			Metadata: getUserMetadata(gotClaims, ja.MetaClaims),
+		}
+		logger.Info("user authenticated", zap.String("user_claim", claimName), zap.String("id", gotUserID))
+		return user, true, nil
 	}
 
 	return User{}, false, err
@@ -194,6 +225,47 @@ func getUserID(claims MapClaims, names []string) (string, string) {
 		}
 	}
 	return "", ""
+}
+
+func getUserMetadata(claims MapClaims, placeholdersMap map[string]string) map[string]string {
+	if len(placeholdersMap) == 0 {
+		return nil
+	}
+
+	metadata := make(map[string]string)
+	for claim, placeholder := range placeholdersMap {
+		claimValue, ok := claims[claim]
+		if !ok {
+			metadata[placeholder] = ""
+			continue
+		}
+		metadata[placeholder] = stringify(claimValue)
+	}
+
+	return metadata
+}
+
+func stringify(val interface{}) string {
+	if val == nil {
+		return ""
+	}
+
+	switch uv := val.(type) {
+	case string:
+		return uv
+	case bool:
+		return strconv.FormatBool(uv)
+	case json.Number:
+		return uv.String()
+	case time.Time:
+		return uv.UTC().Format(time.RFC3339Nano)
+	}
+
+	if stringer, ok := val.(fmt.Stringer); ok {
+		return stringer.String()
+	}
+
+	return ""
 }
 
 func desensitizedTokenString(token string) string {

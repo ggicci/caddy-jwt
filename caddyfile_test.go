@@ -19,6 +19,7 @@ func TestParsingCaddyfileNormalCase(t *testing.T) {
 		from_header X-Api-Key
 		from_cookies user_session SESSID
 		user_claims uid user_id login username
+		meta_claims "IsAdmin -> is_admin" "gender"
 	}
 	`),
 	}
@@ -28,6 +29,7 @@ func TestParsingCaddyfileNormalCase(t *testing.T) {
 		FromHeader:  []string{"X-Api-Key"},
 		FromCookies: []string{"user_session", "SESSID"},
 		UserClaims:  []string{"uid", "user_id", "login", "username"},
+		MetaClaims:  map[string]string{"IsAdmin": "is_admin", "gender": "gender"},
 	}
 
 	h, err := parseCaddyfile(helper)
@@ -40,7 +42,7 @@ func TestParsingCaddyfileNormalCase(t *testing.T) {
 }
 
 func TestParsingCaddyfileError(t *testing.T) {
-	// missing sign_key
+	// invalid sign_key: missing
 	helper := httpcaddyfile.Helper{
 		Dispenser: caddyfile.NewTestDispenser(`
 	jwtauth {
@@ -53,7 +55,7 @@ func TestParsingCaddyfileError(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "sign_key")
 
-	// invalid base64 sign_key
+	// invalid sign_key: base64
 	helper = httpcaddyfile.Helper{
 		Dispenser: caddyfile.NewTestDispenser(`
 	jwtauth {
@@ -78,6 +80,30 @@ func TestParsingCaddyfileError(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "deprecated")
 
+	// invalid meta_claims: parse error
+	helper = httpcaddyfile.Helper{
+		Dispenser: caddyfile.NewTestDispenser(`
+	jwtauth {
+		meta_claims IsAdmin->is_admin->
+	}
+	`),
+	}
+	_, err = parseCaddyfile(helper)
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "meta_claims")
+
+	// invalid meta_claims: duplicate
+	helper = httpcaddyfile.Helper{
+		Dispenser: caddyfile.NewTestDispenser(`
+	jwtauth {
+		meta_claims IsAdmin->is_admin Gender->gender IsAdmin->admin
+	}
+	`),
+	}
+	_, err = parseCaddyfile(helper)
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "meta_claims")
+
 	// unrecognized option
 	helper = httpcaddyfile.Helper{
 		Dispenser: caddyfile.NewTestDispenser(`
@@ -89,4 +115,33 @@ func TestParsingCaddyfileError(t *testing.T) {
 	_, err = parseCaddyfile(helper)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "unrecognized")
+}
+
+func TestParseMetaClaim(t *testing.T) {
+	var testCases = []struct {
+		Key         string
+		Claim       string
+		Placeholder string
+		Pass        bool
+	}{
+		{"username", "username", "username", true},
+		{"registerYear->register_year", "registerYear", "register_year", true},
+		{"IsAdmin -> is_admin", "IsAdmin", "is_admin", true},
+		{"Gender", "Gender", "Gender", true},
+		{"->slot", "", "", false},
+		{"IsMember->", "", "", false},
+		{"Favorite -> favorite->fav", "", "", false},
+	}
+
+	for _, c := range testCases {
+		claim, placeholder, err := parseMetaClaim(c.Key)
+		assert.Equal(t, claim, c.Claim)
+		assert.Equal(t, placeholder, c.Placeholder)
+		if c.Pass == true {
+			assert.Nil(t, err)
+		} else {
+			assert.NotNil(t, err)
+			assert.Contains(t, err.Error(), c.Key)
+		}
+	}
 }

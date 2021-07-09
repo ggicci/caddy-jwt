@@ -1,10 +1,12 @@
 package caddyjwt
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt"
 	"github.com/stretchr/testify/assert"
@@ -26,10 +28,28 @@ func issueTokenString(claims MapClaims) string {
 	return tokenString
 }
 
-func TestValidate(t *testing.T) {
+func TestValidate_SignKey(t *testing.T) {
+	// missing sign_key
 	ja := &JWTAuth{}
 	err := ja.Validate()
 	assert.NotNil(t, err)
+	assert.Equal(t, err.Error(), "sign_key is required")
+
+	// having sign_key
+	ja = &JWTAuth{
+		SignKey: TestSignKey,
+	}
+	assert.Nil(t, ja.Validate())
+}
+
+func TestValidate_InvalidMetaClaims(t *testing.T) {
+	ja := &JWTAuth{
+		SignKey: TestSignKey,
+		MetaClaims: map[string]string{
+			"IsAdmin": "",
+		},
+	}
+	assert.Contains(t, ja.Validate().Error(), "invalid meta claim")
 }
 
 func TestAuthenticate_FromAuthorizationHeader(t *testing.T) {
@@ -261,4 +281,90 @@ func TestAuthenticate_ValidateStandardClaims(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.False(t, authenticated)
 	assert.Empty(t, gotUser.ID)
+}
+
+func TestAuthenticate_PopulateUserMetadata(t *testing.T) {
+	ja := &JWTAuth{
+		SignKey: TestSignKey,
+		MetaClaims: map[string]string{
+			"jti":          "jti",
+			"IsAdmin":      "is_admin",
+			"registerTime": "registered_at",
+			"absent":       "absent", // not found in JWT payload, final ""
+			"groups":       "groups", // unsupported array type, final ""
+		},
+		logger: testLogger,
+	}
+	assert.Nil(t, ja.Validate())
+
+	claimsWithMetadata := MapClaims{
+		"jti":          "a976475a-186a-4c1f-b182-95b3f886e2b4",
+		"aud":          "ggicci",
+		"IsAdmin":      true,
+		"registerTime": time.Date(2000, 1, 2, 15, 23, 18, 0, time.UTC),
+		"groups":       []string{"csgo", "dota2"},
+	}
+	rw := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", issueTokenString(claimsWithMetadata))
+	gotUser, authenticated, err := ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.True(t, authenticated)
+	assert.Equal(t, gotUser.ID, "ggicci")
+	assert.Equal(t, gotUser.Metadata["jti"], "a976475a-186a-4c1f-b182-95b3f886e2b4")
+	assert.Equal(t, gotUser.Metadata["is_admin"], "true")
+	assert.Equal(t, gotUser.Metadata["registered_at"], "2000-01-02T15:23:18Z")
+	assert.Equal(t, gotUser.Metadata["absent"], "")
+	assert.Equal(t, gotUser.Metadata["groups"], "")
+}
+
+type ThingNotStringer struct{}
+type ThingIsStringer struct{}
+
+func (t ThingIsStringer) String() string { return "i'm stringer" }
+
+func Test_stringify(t *testing.T) {
+	now := time.Now()
+
+	for _, c := range []struct {
+		Input    interface{}
+		Expected string
+	}{
+		{nil, ""},
+		{"abc", "abc"},
+		{true, "true"},
+		{false, "false"},
+		{json.Number("1991"), "1991"},
+		{now, now.UTC().Format(time.RFC3339Nano)},
+		{[]int{1, 2, 3}, ""},                // unsupported array type
+		{ThingNotStringer{}, ""},            // unsupported custom type
+		{ThingIsStringer{}, "i'm stringer"}, // support fmt.Stringer interface
+	} {
+		assert.Equal(t, stringify(c.Input), c.Expected)
+	}
+}
+
+func Test_desensitizedTokenString(t *testing.T) {
+	for _, c := range []struct {
+		Input    string
+		Expected string
+	}{
+		{"", ""},
+		{"abc", "abc"},
+		{"abcdef", "abcdef"},
+		{"abcdefg", "ab…fg"},
+		{"abcdefeijk", "abc…ijk"},
+		{"abcdefghijklmnopqrstuvwxyz", "abcdefgh…stuvwxyz"},
+		{"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv", "abcdefghijklmnop…ghijklmnopqrstuv"},
+		{
+			"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz",
+			"abcdefghijklmnop…klmnopqrstuvwxyz",
+		},
+		{
+			"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz",
+			"abcdefghijklmnop…klmnopqrstuvwxyz",
+		},
+	} {
+		assert.Equal(t, desensitizedTokenString(c.Input), c.Expected)
+	}
 }

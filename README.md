@@ -62,6 +62,7 @@ api.example.com {
 			from_header X-Api-Token
 			from_cookies user_session
 			user_claims aud uid user_id username login
+			meta_claims "IsAdmin->is_admin"
 		}
 		reverse_proxy http://172.16.0.14:8080
 	}
@@ -80,4 +81,4 @@ This module behaves like a "JWT Validator". Who
 3. If the token is invalid by any reason, auth **failed** with `401`. Otherwise, next.
 4. Get user id by inspecting the claims defined by `user_claims`.
 5. If no valid user id (non-empty string) found, auth **failed** with `401`. Otherwise, next.
-6. Return the user id to Caddy's authentication handler, and the context value `{http.auth.user.id}` got set.
+6. Return the user id to Caddy's authentication handler, and the context value `{http.auth.user.id}` got set. If `meta_claims` defined, user metadata placeholders `{http.auth.user.*}` will be populated, too.
