@@ -48,11 +48,17 @@ type JWTAuth struct {
 	// from the HTTP cookies.
 	FromCookies []string `json:"from_cookies"`
 
-	// AudienceWhitelist is ...
-	AudienceWhitelist []string `json:"audience_whitelist"`
-
-	// IssuerWhitelist is ...
+	// IssuerWhitelist defines a list of issuers. A non-empty list turns on "iss
+	// verification": the "iss" claim must exist in the given JWT payload. And
+	// the value of the "iss" claim must be on the whitelist in order to pass
+	// the verfication.
 	IssuerWhitelist []string `json:"issuer_whitelist"`
+
+	// AudienceWhitelist defines a list of audiences. A non-empty list turns on
+	// "aud verfication": the "aud" claim must exist in the given JWT payload.
+	// The verification will pass as long as one of the "aud" values is on the
+	// whitelist.
+	AudienceWhitelist []string `json:"audience_whitelist"`
 
 	// UserClaims defines a list of names to find the ID of the authenticated user.
 	//
