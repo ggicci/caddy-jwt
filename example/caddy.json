@@ -18,7 +18,7 @@
                       "from_query": ["access_token", "token"],
                       "from_header": ["X-Api-Token"],
                       "from_cookies": ["user_session"],
-                      "user_claims": ["aud", "uid", "username"]
+                      "user_claims": ["uid", "user_id", "username", "login"]
                     }
                   }
                 },

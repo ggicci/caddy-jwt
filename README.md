@@ -82,3 +82,8 @@ This module behaves like a "JWT Validator". Who
 4. Get user id by inspecting the claims defined by `user_claims`.
 5. If no valid user id (non-empty string) found, auth **failed** with `401`. Otherwise, next.
 6. Return the user id to Caddy's authentication handler, and the context value `{http.auth.user.id}` got set. If `meta_claims` defined, user metadata placeholders `{http.auth.user.*}` will be populated, too.
+
+## JWT Resources
+
+- **MUST READ**: [JWT Security Best Practices](https://curity.io/resources/learn/jwt-best-practices/)
+- Online Debuger: http://jwt.io/

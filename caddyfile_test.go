@@ -18,18 +18,22 @@ func TestParsingCaddyfileNormalCase(t *testing.T) {
 		from_query access_token token _tok
 		from_header X-Api-Key
 		from_cookies user_session SESSID
+		issuer_whitelist https://api.example.com
+		audience_whitelist https://api.example.io https://learn.example.com
 		user_claims uid user_id login username
 		meta_claims "IsAdmin -> is_admin" "gender"
 	}
 	`),
 	}
 	expectedJA := &JWTAuth{
-		SignKey:     []byte("NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY"),
-		FromQuery:   []string{"access_token", "token", "_tok"},
-		FromHeader:  []string{"X-Api-Key"},
-		FromCookies: []string{"user_session", "SESSID"},
-		UserClaims:  []string{"uid", "user_id", "login", "username"},
-		MetaClaims:  map[string]string{"IsAdmin": "is_admin", "gender": "gender"},
+		SignKey:           []byte("NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY"),
+		FromQuery:         []string{"access_token", "token", "_tok"},
+		FromHeader:        []string{"X-Api-Key"},
+		FromCookies:       []string{"user_session", "SESSID"},
+		IssuerWhitelist:   []string{"https://api.example.com"},
+		AudienceWhitelist: []string{"https://api.example.io", "https://learn.example.com"},
+		UserClaims:        []string{"uid", "user_id", "login", "username"},
+		MetaClaims:        map[string]string{"IsAdmin": "is_admin", "gender": "gender"},
 	}
 
 	h, err := parseCaddyfile(helper)

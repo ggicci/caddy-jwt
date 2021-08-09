@@ -50,6 +50,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			case "from_cookies":
 				ja.FromCookies = h.RemainingArgs()
 
+			case "audience_whitelist":
+				ja.AudienceWhitelist = h.RemainingArgs()
+
+			case "issuer_whitelist":
+				ja.IssuerWhitelist = h.RemainingArgs()
+
 			case "user_claims":
 				ja.UserClaims = h.RemainingArgs()
 

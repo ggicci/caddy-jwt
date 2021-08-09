@@ -53,7 +53,7 @@ func TestValidate_InvalidMetaClaims(t *testing.T) {
 }
 
 func TestAuthenticate_FromAuthorizationHeader(t *testing.T) {
-	claims := MapClaims{"aud": "ggicci"}
+	claims := MapClaims{"username": "ggicci"}
 	ja := &JWTAuth{SignKey: TestSignKey, logger: testLogger}
 	assert.Nil(t, ja.Validate())
 
@@ -67,7 +67,7 @@ func TestAuthenticate_FromAuthorizationHeader(t *testing.T) {
 }
 
 func TestAuthenticate_FromCustomHeader(t *testing.T) {
-	claims := MapClaims{"aud": "ggicci"}
+	claims := MapClaims{"username": "ggicci"}
 	ja := &JWTAuth{
 		SignKey:    TestSignKey,
 		FromHeader: []string{"X-Api-Token"},
@@ -86,7 +86,7 @@ func TestAuthenticate_FromCustomHeader(t *testing.T) {
 
 func TestAuthenticate_FromQuery(t *testing.T) {
 	var (
-		claims = MapClaims{"aud": "ggicci"}
+		claims = MapClaims{"username": "ggicci"}
 		ja     = &JWTAuth{
 			SignKey:   TestSignKey,
 			FromQuery: []string{"access_token", "token"},
@@ -163,7 +163,7 @@ func TestAuthenticate_FromQuery(t *testing.T) {
 }
 
 func TestAuthenticate_FromCookies(t *testing.T) {
-	claims := MapClaims{"aud": "ggicci"}
+	claims := MapClaims{"username": "ggicci"}
 	ja := &JWTAuth{
 		SignKey:     TestSignKey,
 		FromCookies: []string{"user_session", "sess"},
@@ -181,7 +181,7 @@ func TestAuthenticate_FromCookies(t *testing.T) {
 }
 
 func TestAuthenticate_CustomUserClaims(t *testing.T) {
-	claims := MapClaims{"aud": "ggicci", "user_id": "182140474727"}
+	claims := MapClaims{"username": "ggicci", "user_id": "182140474727"}
 	ja := &JWTAuth{
 		SignKey:    TestSignKey,
 		UserClaims: []string{"user_id"},
@@ -197,7 +197,7 @@ func TestAuthenticate_CustomUserClaims(t *testing.T) {
 	assert.Equal(t, User{ID: "182140474727"}, gotUser)
 
 	// custom user claims all empty should fail - having keys
-	claims = MapClaims{"aud": "ggicci", "user_id": ""}
+	claims = MapClaims{"username": "ggicci", "user_id": ""}
 	ja = &JWTAuth{
 		SignKey:    TestSignKey,
 		UserClaims: []string{"user_id"},
@@ -213,7 +213,7 @@ func TestAuthenticate_CustomUserClaims(t *testing.T) {
 	assert.Empty(t, gotUser.ID)
 
 	// custom user claims all empty should fail - even no keys
-	claims = MapClaims{"aud": "ggicci"}
+	claims = MapClaims{"username": "ggicci"}
 	ja = &JWTAuth{
 		SignKey:    TestSignKey,
 		UserClaims: []string{"uid", "user_id"},
@@ -229,7 +229,7 @@ func TestAuthenticate_CustomUserClaims(t *testing.T) {
 	assert.Empty(t, gotUser.ID)
 
 	// custom user claims at least one is non-empty can work
-	claims = MapClaims{"aud": "ggicci", "user_id": nil, "uid": 19911110}
+	claims = MapClaims{"username": "ggicci", "user_id": nil, "uid": 19911110}
 	ja = &JWTAuth{
 		SignKey:    TestSignKey,
 		UserClaims: []string{"user_id", "uid"},
@@ -253,7 +253,7 @@ func TestAuthenticate_ValidateStandardClaims(t *testing.T) {
 	assert.Nil(t, ja.Validate())
 
 	// invalid "exp" (Expiration Time)
-	expiredClaims := MapClaims{"aud": "ggicci", "exp": 689702400}
+	expiredClaims := MapClaims{"username": "ggicci", "exp": 689702400}
 	rw := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
 	r.Header.Add("Authorization", issueTokenString(expiredClaims))
@@ -263,7 +263,7 @@ func TestAuthenticate_ValidateStandardClaims(t *testing.T) {
 	assert.Empty(t, gotUser.ID)
 
 	// invalid "iat" (Issued At)
-	expiredClaims = MapClaims{"aud": "ggicci", "iat": 3845462400}
+	expiredClaims = MapClaims{"username": "ggicci", "iat": 3845462400}
 	rw = httptest.NewRecorder()
 	r, _ = http.NewRequest("GET", "/", nil)
 	r.Header.Add("Authorization", issueTokenString(expiredClaims))
@@ -273,10 +273,122 @@ func TestAuthenticate_ValidateStandardClaims(t *testing.T) {
 	assert.Empty(t, gotUser.ID)
 
 	// invalid "nbf" (Not Before)
-	expiredClaims = MapClaims{"aud": "ggicci", "nbf": 3845462400}
+	expiredClaims = MapClaims{"username": "ggicci", "nbf": 3845462400}
 	rw = httptest.NewRecorder()
 	r, _ = http.NewRequest("GET", "/", nil)
 	r.Header.Add("Authorization", issueTokenString(expiredClaims))
+	gotUser, authenticated, err = ja.Authenticate(rw, r)
+	assert.NotNil(t, err)
+	assert.False(t, authenticated)
+	assert.Empty(t, gotUser.ID)
+}
+
+func TestAuthenticate_VerifyIssuerWhitelist(t *testing.T) {
+	ja := &JWTAuth{
+		SignKey: TestSignKey,
+		logger:  testLogger,
+
+		IssuerWhitelist: []string{"https://api.example.com", "https://api.github.com"},
+	}
+	assert.Nil(t, ja.Validate())
+
+	// valid "iss"
+	exampleClaims := MapClaims{"username": "ggicci", "iss": "https://api.example.com"}
+	rw := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", issueTokenString(exampleClaims))
+	gotUser, authenticated, err := ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.True(t, authenticated)
+	assert.Equal(t, gotUser.ID, "ggicci")
+
+	githubClaims := MapClaims{"username": "ggicci", "iss": "https://api.github.com"}
+	rw = httptest.NewRecorder()
+	r, _ = http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", issueTokenString(githubClaims))
+	gotUser, authenticated, err = ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.True(t, authenticated)
+	assert.Equal(t, gotUser.ID, "ggicci")
+
+	// invalid "iss" (no iss)
+	noIssClaims := MapClaims{"username": "ggicci"}
+	rw = httptest.NewRecorder()
+	r, _ = http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", issueTokenString(noIssClaims))
+	gotUser, authenticated, err = ja.Authenticate(rw, r)
+	assert.NotNil(t, err)
+	assert.False(t, authenticated)
+	assert.Empty(t, gotUser.ID)
+
+	// invalid "iss" (wrong value)
+	wrongIssClaims := MapClaims{"username": "ggicci", "iss": "https://api.example.com/secure"}
+	rw = httptest.NewRecorder()
+	r, _ = http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", issueTokenString(wrongIssClaims))
+	gotUser, authenticated, err = ja.Authenticate(rw, r)
+	assert.NotNil(t, err)
+	assert.False(t, authenticated)
+	assert.Empty(t, gotUser.ID)
+}
+
+func TestAuthenticate_VerifyAudienceWhitelist(t *testing.T) {
+	ja := &JWTAuth{
+		SignKey: TestSignKey,
+		logger:  testLogger,
+
+		IssuerWhitelist:   []string{"https://api.github.com"},
+		AudienceWhitelist: []string{"https://api.codelet.io", "https://api.copilot.codelet.io"},
+	}
+	assert.Nil(t, ja.Validate())
+
+	// valid "aud" (of single string)
+	githubClaims := MapClaims{
+		"username": "ggicci",
+		"iss":      "https://api.github.com",
+		"aud":      "https://api.codelet.io",
+	}
+	rw := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", issueTokenString(githubClaims))
+	gotUser, authenticated, err := ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.True(t, authenticated)
+	assert.Equal(t, gotUser.ID, "ggicci")
+
+	// valid "aud" (multiple, as long as one of them is on the whitelist)
+	githubClaims = MapClaims{
+		"username": "ggicci",
+		"iss":      "https://api.github.com",
+		"aud":      []string{"https://api.learn.codelet.io", "https://api.copilot.codelet.io"},
+	}
+	rw = httptest.NewRecorder()
+	r, _ = http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", issueTokenString(githubClaims))
+	gotUser, authenticated, err = ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.True(t, authenticated)
+	assert.Equal(t, gotUser.ID, "ggicci")
+
+	// invalid "aud" (no aud)
+	noIssClaims := MapClaims{"username": "ggicci", "iss": "https://api.github.com"}
+	rw = httptest.NewRecorder()
+	r, _ = http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", issueTokenString(noIssClaims))
+	gotUser, authenticated, err = ja.Authenticate(rw, r)
+	assert.NotNil(t, err)
+	assert.False(t, authenticated)
+	assert.Empty(t, gotUser.ID)
+
+	// invalid "aud" (wrong value)
+	wrongIssClaims := MapClaims{
+		"username": "ggicci",
+		"iss":      "https://api.github.com",
+		"aud":      []string{"https://api.example.com", "https://api.example.org"},
+	}
+	rw = httptest.NewRecorder()
+	r, _ = http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", issueTokenString(wrongIssClaims))
 	gotUser, authenticated, err = ja.Authenticate(rw, r)
 	assert.NotNil(t, err)
 	assert.False(t, authenticated)
@@ -299,7 +411,7 @@ func TestAuthenticate_PopulateUserMetadata(t *testing.T) {
 
 	claimsWithMetadata := MapClaims{
 		"jti":          "a976475a-186a-4c1f-b182-95b3f886e2b4",
-		"aud":          "ggicci",
+		"username":     "ggicci",
 		"IsAdmin":      true,
 		"registerTime": time.Date(2000, 1, 2, 15, 23, 18, 0, time.UTC),
 		"groups":       []string{"csgo", "dota2"},

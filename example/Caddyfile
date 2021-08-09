@@ -5,7 +5,7 @@ http://localhost:8080 {
 			from_query access_token token
 			from_header X-Api-Token
 			from_cookies user_session
-			user_claims aud uid user_id username login
+			user_claims uid user_id username login
 			meta_claims "IsAdmin -> is_admin" "gender"
 		}
 		respond 200 {

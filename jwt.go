@@ -48,10 +48,15 @@ type JWTAuth struct {
 	// from the HTTP cookies.
 	FromCookies []string `json:"from_cookies"`
 
+	// AudienceWhitelist is ...
+	AudienceWhitelist []string `json:"audience_whitelist"`
+
+	// IssuerWhitelist is ...
+	IssuerWhitelist []string `json:"issuer_whitelist"`
+
 	// UserClaims defines a list of names to find the ID of the authenticated user.
 	//
-	// By default, this config will be set to []string{"aud"}.
-	// Where "aud" is a reserved name in RFC7519 indicating the audience of a token.
+	// By default, this config will be set to []string{"username"}.
 	//
 	// If multiple names were given, we will use the first non-empty value of the key
 	// in the JWT payload as the ID of the authenticated user. i.e. The placeholder
@@ -105,9 +110,7 @@ func (ja *JWTAuth) Validate() error {
 	}
 	if len(ja.UserClaims) == 0 {
 		ja.UserClaims = []string{
-			// "aud" (the audience) is a reserved claim name
-			// https://datatracker.ietf.org/doc/html/rfc7519#section-4.1
-			"aud",
+			"username",
 		}
 	}
 	for claim, placeholder := range ja.MetaClaims {
@@ -149,16 +152,52 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 
 		logger := ja.logger.With(zap.String("token_string", desensitizedTokenString(tokenString)))
 		if err != nil {
-			logger.Error("invalid token", zap.NamedError("error", err))
+			logger.Error("invalid token", zap.Error(err))
 			continue
 		}
 
-		// The token is valid. Continue to check the user claim.
 		var gotClaims = gotToken.Claims.(MapClaims)
+		// By default, the following claims will be verified:
+		//   - "exp"
+		//   - "iat"
+		//   - "nbf"
+		// Here, if `aud_whitelist` or `iss_whitelist` were specified,
+		// continue to verify "aud" and "iss" correspondingly.
+		if len(ja.IssuerWhitelist) > 0 {
+			isValidIssuer := false
+			for _, issuer := range ja.IssuerWhitelist {
+				if gotClaims.VerifyIssuer(issuer, true) {
+					isValidIssuer = true
+					break
+				}
+			}
+			if !isValidIssuer {
+				err = errors.New("invalid issuer")
+				logger.Error("invalid token", zap.Error(err))
+				continue
+			}
+		}
+
+		if len(ja.AudienceWhitelist) > 0 {
+			isValidAudience := false
+			for _, audience := range ja.AudienceWhitelist {
+				if gotClaims.VerifyAudience(audience, true) {
+					isValidAudience = true
+					break
+				}
+			}
+			if !isValidAudience {
+				err = errors.New("invalid audience")
+				logger.Error("invalid token", zap.Error(err))
+				continue
+			}
+		}
+
+		// The token is valid. Continue to check the user claim.
 		claimName, gotUserID := getUserID(gotClaims, ja.UserClaims)
 		if gotUserID == "" {
 			err = errors.New("empty user claim")
-			logger.Error("invalid token", zap.Strings("user_claims", ja.UserClaims), zap.NamedError("error", err))
+			logger.Error("invalid token", zap.Strings("user_claims", ja.UserClaims), zap.Error(err))
 			continue
 		}
 
