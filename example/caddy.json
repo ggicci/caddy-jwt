@@ -18,6 +18,11 @@
                       "from_query": ["access_token", "token"],
                       "from_header": ["X-Api-Token"],
                       "from_cookies": ["user_session"],
+                      "issuer_whitelist": ["https://api.example.com"],
+                      "audience_whitelist": [
+                        "https://api.example.io",
+                        "https://learn.example.com"
+                      ],
                       "user_claims": ["uid", "user_id", "username", "login"]
                     }
                   }

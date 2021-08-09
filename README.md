@@ -61,6 +61,8 @@ api.example.com {
 			from_query access_token token
 			from_header X-Api-Token
 			from_cookies user_session
+			issuer_whitelist https://api.example.com
+			audience_whitelist https://api.example.io https://learn.example.com
 			user_claims aud uid user_id username login
 			meta_claims "IsAdmin->is_admin"
 		}
