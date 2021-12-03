@@ -399,11 +399,14 @@ func TestAuthenticate_PopulateUserMetadata(t *testing.T) {
 	ja := &JWTAuth{
 		SignKey: TestSignKey,
 		MetaClaims: map[string]string{
-			"jti":          "jti",
-			"IsAdmin":      "is_admin",
-			"registerTime": "registered_at",
-			"absent":       "absent", // not found in JWT payload, final ""
-			"groups":       "groups", // unsupported array type, final ""
+			"jti":                            "jti",
+			"IsAdmin":                        "is_admin",
+			"registerTime":                   "registered_at",
+			"absent":                         "absent", // not found in JWT payload, final ""
+			"groups":                         "groups", // unsupported array type, final ""
+			"settings.role":                  "role",   // supported nested claim, final "admin"
+			"settings.payout.paypal.enabled": "is_paypal_enabled",
+			"settings.payout.alipay.enabled": "is_alipay_enabled",
 		},
 		logger: testLogger,
 	}
@@ -415,6 +418,14 @@ func TestAuthenticate_PopulateUserMetadata(t *testing.T) {
 		"IsAdmin":      true,
 		"registerTime": time.Date(2000, 1, 2, 15, 23, 18, 0, time.UTC),
 		"groups":       []string{"csgo", "dota2"},
+		"settings": map[string]interface{}{
+			"role": "admin",
+			"payout": map[string]interface{}{
+				"paypal": map[string]interface{}{
+					"enabled": true,
+				},
+			},
+		},
 	}
 	rw := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
@@ -422,12 +433,15 @@ func TestAuthenticate_PopulateUserMetadata(t *testing.T) {
 	gotUser, authenticated, err := ja.Authenticate(rw, r)
 	assert.Nil(t, err)
 	assert.True(t, authenticated)
-	assert.Equal(t, gotUser.ID, "ggicci")
-	assert.Equal(t, gotUser.Metadata["jti"], "a976475a-186a-4c1f-b182-95b3f886e2b4")
-	assert.Equal(t, gotUser.Metadata["is_admin"], "true")
-	assert.Equal(t, gotUser.Metadata["registered_at"], "2000-01-02T15:23:18Z")
-	assert.Equal(t, gotUser.Metadata["absent"], "")
-	assert.Equal(t, gotUser.Metadata["groups"], "")
+	assert.Equal(t, "ggicci", gotUser.ID)
+	assert.Equal(t, "a976475a-186a-4c1f-b182-95b3f886e2b4", gotUser.Metadata["jti"])
+	assert.Equal(t, "true", gotUser.Metadata["is_admin"])
+	assert.Equal(t, "2000-01-02T15:23:18Z", gotUser.Metadata["registered_at"])
+	assert.Equal(t, "", gotUser.Metadata["absent"])
+	assert.Equal(t, "", gotUser.Metadata["groups"])
+	assert.Equal(t, "admin", gotUser.Metadata["role"])
+	assert.Equal(t, "true", gotUser.Metadata["is_paypal_enabled"])
+	assert.Equal(t, "", gotUser.Metadata["is_alipay_enabled"])
 }
 
 type ThingNotStringer struct{}

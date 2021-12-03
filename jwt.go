@@ -90,6 +90,17 @@ type JWTAuth struct {
 	//     meta_claims "IsAdmin -> is_admin" "group"
 	//
 	// is equal to {"IsAdmin": "is_admin", "group": "group"}.
+	//
+	// Since v0.6.0, nested claim path is also supported, e.g.
+	// For the following JWT payload:
+	//
+	//     { ..., "user_info": { "role": "admin" }}
+	//
+	// If you want to populate {http.auth.user.role} with "admin", you can use
+	//
+	//     meta_claims "user_info.role -> role"
+	//
+	// Use dot notation to access nested claims.
 	MetaClaims map[string]string `json:"meta_claims"`
 
 	logger *zap.Logger
@@ -272,6 +283,21 @@ func getUserID(claims MapClaims, names []string) (string, string) {
 	return "", ""
 }
 
+func queryNested(claims MapClaims, path []string) (interface{}, bool) {
+	var (
+		object map[string]interface{} = (map[string]interface{})(claims)
+		ok     bool
+	)
+	for i := 0; i < len(path)-1; i++ {
+		if object, ok = object[path[i]].(map[string]interface{}); !ok || object == nil {
+			return nil, false
+		}
+	}
+
+	lastKey := path[len(path)-1]
+	return object[lastKey], true
+}
+
 func getUserMetadata(claims MapClaims, placeholdersMap map[string]string) map[string]string {
 	if len(placeholdersMap) == 0 {
 		return nil
@@ -280,6 +306,11 @@ func getUserMetadata(claims MapClaims, placeholdersMap map[string]string) map[st
 	metadata := make(map[string]string)
 	for claim, placeholder := range placeholdersMap {
 		claimValue, ok := claims[claim]
+
+		// Query nested claims.
+		if !ok && strings.Contains(claim, ".") {
+			claimValue, ok = queryNested(claims, strings.Split(claim, "."))
+		}
 		if !ok {
 			metadata[placeholder] = ""
 			continue
