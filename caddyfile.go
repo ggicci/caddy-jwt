@@ -1,7 +1,6 @@
 package caddyjwt
 
 import (
-	"encoding/base64"
 	"fmt"
 	"strings"
 
@@ -30,17 +29,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			opt := h.Val()
 			switch opt {
 			case "sign_key":
-				var signKeyString string
-				if !h.AllArgs(&signKeyString) {
+				if !h.AllArgs(&ja.SignKey) {
 					return nil, h.Errf("invalid sign_key")
 				}
-				// Decode key from base64 to binary.
-				if key, err := base64.StdEncoding.DecodeString(signKeyString); err != nil {
-					return nil, h.Errf("invalid sign_key: %v", err)
-				} else {
-					ja.SignKey = key
-				}
-
 			case "from_query":
 				ja.FromQuery = h.RemainingArgs()
 
@@ -64,7 +55,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				for _, metaClaim := range h.RemainingArgs() {
 					claim, placeholder, err := parseMetaClaim(metaClaim)
 					if err != nil {
-						return nil, h.Errf("invalid meta_claims: %v", err)
+						return nil, h.Errf("invalid meta_claims: %w", err)
 					}
 					if _, ok := ja.MetaClaims[claim]; ok {
 						return nil, h.Errf("invalid meta_claims: duplicate claim: %s", claim)

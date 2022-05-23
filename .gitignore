@@ -15,4 +15,4 @@
 # vendor/
 caddy
 .vscode/
-
+.DS_Store
