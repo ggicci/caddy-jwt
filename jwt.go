@@ -32,7 +32,7 @@ type JWTAuth struct {
 	//
 	// For symmetric algorithems, use the key directly. e.g.
 	//
-	//     "<secret_key_in_base64_format>".
+	//     "<secret_key_bytes_in_base64_format>".
 	//
 	// For asymmetric algorithems, use the public key in x509 PEM format. e.g.
 	//
@@ -73,7 +73,7 @@ type JWTAuth struct {
 
 	// UserClaims defines a list of names to find the ID of the authenticated user.
 	//
-	// By default, this config will be set to []string{"username"}.
+	// By default, this config will be set to []string{"sub"}.
 	//
 	// If multiple names were given, we will use the first non-empty value of the key
 	// in the JWT payload as the ID of the authenticated user. i.e. The placeholder
