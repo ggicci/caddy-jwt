@@ -136,4 +136,4 @@ flowchart by https://asciiflow.com/
 ## References
 
 - **MUST READ**: [JWT Security Best Practices](https://curity.io/resources/learn/jwt-best-practices/)
-- Online Debuger: http://jwt.io/
+- Online Debugers: http://jwt.io/, https://token.dev/jwt/
