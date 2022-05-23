@@ -32,13 +32,13 @@ type JWTAuth struct {
 	//
 	// For symmetric algorithems, use the key directly. e.g.
 	//
-	//   "<secret_bytes_in_base64_format>".
+	//     "<secret_key_in_base64_format>".
 	//
 	// For asymmetric algorithems, use the public key in x509 PEM format. e.g.
 	//
-	//   -----BEGIN PUBLIC KEY-----
-	//   ...
-	//   -----END PUBLIC KEY-----
+	//     -----BEGIN PUBLIC KEY-----
+	//     ...
+	//     -----END PUBLIC KEY-----
 	SignKey string `json:"sign_key"`
 
 	// FromQuery defines a list of names to get tokens from the query parameters
