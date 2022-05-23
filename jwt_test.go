@@ -1,6 +1,7 @@
 package caddyjwt
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,15 +14,30 @@ import (
 	"go.uber.org/zap"
 )
 
-var TestSignKey = []byte("NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY")
-
 var (
 	testLogger, _ = zap.NewDevelopment()
+
+	// Symmetric
+	RawTestSignKey = []byte("NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY")
+	TestSignKey    = base64.StdEncoding.EncodeToString(RawTestSignKey)
+
+	// Asymmetric
+	TestPubKey = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArzekF0pqttKNJMOiZeyt
+RdYiabdyy/sdGQYWYJPGD2Q+QDU9ZqprDmKgFOTxUy/VUBnaYr7hOEMBe7I6dyaS
+5G0EGr8UXAwgD5Uvhmz6gqvKTV+FyQfw0bupbcM4CdMD7wQ9uOxDdMYm7g7gdGd6
+SSIVvmsGDibBI9S7nKlbcbmciCmxbAlwegTYSHHLjwWvDs2aAF8fxeRfphwQZKkd
+HekSZ090/c2V4i0ju2M814QyGERMoq+cSlmikCgRWoSZeWOSTj+rAZJyEAzlVL4z
+8ojzOpjmxw6pRYsS0vYIGEDuyiptf+ODC8smTbma/p3Vz+vzyLWPfReQY2RHtpUe
+hwIDAQAB
+-----END PUBLIC KEY-----`
 )
 
+// issueTokenString issues a token string with the given claims,
+// using HS256 signing algorithm.
 func issueTokenString(claims MapClaims) string {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString([]byte(TestSignKey))
+	tokenString, err := token.SignedString(RawTestSignKey)
 	if err != nil {
 		panic(err)
 	}
@@ -33,7 +49,7 @@ func TestValidate_SignKey(t *testing.T) {
 	ja := &JWTAuth{}
 	err := ja.Validate()
 	assert.NotNil(t, err)
-	assert.Equal(t, err.Error(), "sign_key is required")
+	assert.ErrorIs(t, err, ErrMissingSignKey)
 
 	// having sign_key
 	ja = &JWTAuth{
@@ -53,7 +69,7 @@ func TestValidate_InvalidMetaClaims(t *testing.T) {
 }
 
 func TestAuthenticate_FromAuthorizationHeader(t *testing.T) {
-	claims := MapClaims{"username": "ggicci"}
+	claims := MapClaims{"sub": "ggicci"}
 	ja := &JWTAuth{SignKey: TestSignKey, logger: testLogger}
 	assert.Nil(t, ja.Validate())
 
@@ -67,7 +83,7 @@ func TestAuthenticate_FromAuthorizationHeader(t *testing.T) {
 }
 
 func TestAuthenticate_FromCustomHeader(t *testing.T) {
-	claims := MapClaims{"username": "ggicci"}
+	claims := MapClaims{"sub": "ggicci"}
 	ja := &JWTAuth{
 		SignKey:    TestSignKey,
 		FromHeader: []string{"X-Api-Token"},
@@ -86,7 +102,7 @@ func TestAuthenticate_FromCustomHeader(t *testing.T) {
 
 func TestAuthenticate_FromQuery(t *testing.T) {
 	var (
-		claims = MapClaims{"username": "ggicci"}
+		claims = MapClaims{"sub": "ggicci"}
 		ja     = &JWTAuth{
 			SignKey:   TestSignKey,
 			FromQuery: []string{"access_token", "token"},
@@ -163,7 +179,7 @@ func TestAuthenticate_FromQuery(t *testing.T) {
 }
 
 func TestAuthenticate_FromCookies(t *testing.T) {
-	claims := MapClaims{"username": "ggicci"}
+	claims := MapClaims{"sub": "ggicci"}
 	ja := &JWTAuth{
 		SignKey:     TestSignKey,
 		FromCookies: []string{"user_session", "sess"},
@@ -181,10 +197,10 @@ func TestAuthenticate_FromCookies(t *testing.T) {
 }
 
 func TestAuthenticate_CustomUserClaims(t *testing.T) {
-	claims := MapClaims{"username": "ggicci", "user_id": "182140474727"}
+	claims := MapClaims{"sub": "182140474727", "username": "ggicci"}
 	ja := &JWTAuth{
 		SignKey:    TestSignKey,
-		UserClaims: []string{"user_id"},
+		UserClaims: []string{"username"},
 		logger:     testLogger,
 	}
 	assert.Nil(t, ja.Validate())
@@ -194,13 +210,13 @@ func TestAuthenticate_CustomUserClaims(t *testing.T) {
 	gotUser, authenticated, err := ja.Authenticate(rw, r)
 	assert.Nil(t, err)
 	assert.True(t, authenticated)
-	assert.Equal(t, User{ID: "182140474727"}, gotUser)
+	assert.Equal(t, User{ID: "ggicci"}, gotUser)
 
 	// custom user claims all empty should fail - having keys
-	claims = MapClaims{"username": "ggicci", "user_id": ""}
+	claims = MapClaims{"sub": "ggicci", "username": ""}
 	ja = &JWTAuth{
 		SignKey:    TestSignKey,
-		UserClaims: []string{"user_id"},
+		UserClaims: []string{"username"},
 		logger:     testLogger,
 	}
 	assert.Nil(t, ja.Validate())
@@ -253,7 +269,7 @@ func TestAuthenticate_ValidateStandardClaims(t *testing.T) {
 	assert.Nil(t, ja.Validate())
 
 	// invalid "exp" (Expiration Time)
-	expiredClaims := MapClaims{"username": "ggicci", "exp": 689702400}
+	expiredClaims := MapClaims{"sub": "ggicci", "exp": 689702400}
 	rw := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
 	r.Header.Add("Authorization", issueTokenString(expiredClaims))
@@ -263,7 +279,7 @@ func TestAuthenticate_ValidateStandardClaims(t *testing.T) {
 	assert.Empty(t, gotUser.ID)
 
 	// invalid "iat" (Issued At)
-	expiredClaims = MapClaims{"username": "ggicci", "iat": 3845462400}
+	expiredClaims = MapClaims{"sub": "ggicci", "iat": 3845462400}
 	rw = httptest.NewRecorder()
 	r, _ = http.NewRequest("GET", "/", nil)
 	r.Header.Add("Authorization", issueTokenString(expiredClaims))
@@ -273,7 +289,7 @@ func TestAuthenticate_ValidateStandardClaims(t *testing.T) {
 	assert.Empty(t, gotUser.ID)
 
 	// invalid "nbf" (Not Before)
-	expiredClaims = MapClaims{"username": "ggicci", "nbf": 3845462400}
+	expiredClaims = MapClaims{"sub": "ggicci", "nbf": 3845462400}
 	rw = httptest.NewRecorder()
 	r, _ = http.NewRequest("GET", "/", nil)
 	r.Header.Add("Authorization", issueTokenString(expiredClaims))
@@ -293,7 +309,7 @@ func TestAuthenticate_VerifyIssuerWhitelist(t *testing.T) {
 	assert.Nil(t, ja.Validate())
 
 	// valid "iss"
-	exampleClaims := MapClaims{"username": "ggicci", "iss": "https://api.example.com"}
+	exampleClaims := MapClaims{"sub": "ggicci", "iss": "https://api.example.com"}
 	rw := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
 	r.Header.Add("Authorization", issueTokenString(exampleClaims))
@@ -302,7 +318,7 @@ func TestAuthenticate_VerifyIssuerWhitelist(t *testing.T) {
 	assert.True(t, authenticated)
 	assert.Equal(t, gotUser.ID, "ggicci")
 
-	githubClaims := MapClaims{"username": "ggicci", "iss": "https://api.github.com"}
+	githubClaims := MapClaims{"sub": "ggicci", "iss": "https://api.github.com"}
 	rw = httptest.NewRecorder()
 	r, _ = http.NewRequest("GET", "/", nil)
 	r.Header.Add("Authorization", issueTokenString(githubClaims))
@@ -312,7 +328,7 @@ func TestAuthenticate_VerifyIssuerWhitelist(t *testing.T) {
 	assert.Equal(t, gotUser.ID, "ggicci")
 
 	// invalid "iss" (no iss)
-	noIssClaims := MapClaims{"username": "ggicci"}
+	noIssClaims := MapClaims{"sub": "ggicci"}
 	rw = httptest.NewRecorder()
 	r, _ = http.NewRequest("GET", "/", nil)
 	r.Header.Add("Authorization", issueTokenString(noIssClaims))
@@ -322,7 +338,7 @@ func TestAuthenticate_VerifyIssuerWhitelist(t *testing.T) {
 	assert.Empty(t, gotUser.ID)
 
 	// invalid "iss" (wrong value)
-	wrongIssClaims := MapClaims{"username": "ggicci", "iss": "https://api.example.com/secure"}
+	wrongIssClaims := MapClaims{"sub": "ggicci", "iss": "https://api.example.com/secure"}
 	rw = httptest.NewRecorder()
 	r, _ = http.NewRequest("GET", "/", nil)
 	r.Header.Add("Authorization", issueTokenString(wrongIssClaims))
@@ -344,9 +360,9 @@ func TestAuthenticate_VerifyAudienceWhitelist(t *testing.T) {
 
 	// valid "aud" (of single string)
 	githubClaims := MapClaims{
-		"username": "ggicci",
-		"iss":      "https://api.github.com",
-		"aud":      "https://api.codelet.io",
+		"sub": "ggicci",
+		"iss": "https://api.github.com",
+		"aud": "https://api.codelet.io",
 	}
 	rw := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
@@ -358,9 +374,9 @@ func TestAuthenticate_VerifyAudienceWhitelist(t *testing.T) {
 
 	// valid "aud" (multiple, as long as one of them is on the whitelist)
 	githubClaims = MapClaims{
-		"username": "ggicci",
-		"iss":      "https://api.github.com",
-		"aud":      []string{"https://api.learn.codelet.io", "https://api.copilot.codelet.io"},
+		"sub": "ggicci",
+		"iss": "https://api.github.com",
+		"aud": []string{"https://api.learn.codelet.io", "https://api.copilot.codelet.io"},
 	}
 	rw = httptest.NewRecorder()
 	r, _ = http.NewRequest("GET", "/", nil)
@@ -371,7 +387,7 @@ func TestAuthenticate_VerifyAudienceWhitelist(t *testing.T) {
 	assert.Equal(t, gotUser.ID, "ggicci")
 
 	// invalid "aud" (no aud)
-	noIssClaims := MapClaims{"username": "ggicci", "iss": "https://api.github.com"}
+	noIssClaims := MapClaims{"sub": "ggicci", "iss": "https://api.github.com"}
 	rw = httptest.NewRecorder()
 	r, _ = http.NewRequest("GET", "/", nil)
 	r.Header.Add("Authorization", issueTokenString(noIssClaims))
@@ -382,9 +398,9 @@ func TestAuthenticate_VerifyAudienceWhitelist(t *testing.T) {
 
 	// invalid "aud" (wrong value)
 	wrongIssClaims := MapClaims{
-		"username": "ggicci",
-		"iss":      "https://api.github.com",
-		"aud":      []string{"https://api.example.com", "https://api.example.org"},
+		"sub": "ggicci",
+		"iss": "https://api.github.com",
+		"aud": []string{"https://api.example.com", "https://api.example.org"},
 	}
 	rw = httptest.NewRecorder()
 	r, _ = http.NewRequest("GET", "/", nil)
@@ -414,7 +430,7 @@ func TestAuthenticate_PopulateUserMetadata(t *testing.T) {
 
 	claimsWithMetadata := MapClaims{
 		"jti":          "a976475a-186a-4c1f-b182-95b3f886e2b4",
-		"username":     "ggicci",
+		"sub":          "ggicci",
 		"IsAdmin":      true,
 		"registerTime": time.Date(2000, 1, 2, 15, 23, 18, 0, time.UTC),
 		"groups":       []string{"csgo", "dota2"},
@@ -493,4 +509,22 @@ func Test_desensitizedTokenString(t *testing.T) {
 	} {
 		assert.Equal(t, desensitizedTokenString(c.Input), c.Expected)
 	}
+}
+
+func Test_AsymmetricAlgorithm(t *testing.T) {
+	ja := &JWTAuth{SignKey: TestPubKey, UserClaims: []string{"login"}, logger: testLogger}
+	assert.Nil(t, ja.Validate())
+	token := "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIzMDc3NTU1IiwibG9naW4iOiJnZ2ljY2kiLCJkaXNwbGF5IjoiR2dpY2NpIiwiYWRtaW4iOmZhbHNlfQ.eOXRUSS-WSebEobZgqmui9VlKentHW5IxQpWR5xGu-u9svzdWJnGqLbnKBeIy42tQkFHNDWUx4R2z8Jv3ZPByN1qvWYIloJ8vLQsb0GsfXoqOPkhsfAzkOEp0m5Ws83ar9TT83MLQrUisKU-WjRZTOid9Hfe2atKN4h74vqpNMUfdRZ4NOZtBTmKjoRdWwNBmM5kg59b_cUKNR9Ruab0dwI72_svFZaNiRzBXLTTOVP2Xn0wk_mavyo4dhP83P66mefSYNkoA4_xft3iG43Zkta5lnjV-EF9fACG8g4pugytDGAgGBsOoKZagIqDdNqQWo1e4CLP4G2kMTfGqlosLQ"
+	rw := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", "Bearer "+token)
+	gotUser, authenticated, err := ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.True(t, authenticated)
+	assert.Equal(t, User{ID: "ggicci"}, gotUser)
+}
+
+func Test_AsymmetricAlgorithm_InvalidPubKey(t *testing.T) {
+	ja := &JWTAuth{SignKey: `-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAA ... invalid\n-----END PUBLIC KEY-----`, UserClaims: []string{"login"}, logger: testLogger}
+	assert.ErrorIs(t, ja.Validate(), ErrInvalidPublicKey)
 }

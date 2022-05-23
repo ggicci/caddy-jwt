@@ -2,8 +2,10 @@
 package caddyjwt
 
 import (
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
-	"errors"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -28,8 +30,16 @@ type MapClaims = jwt.MapClaims
 type JWTAuth struct {
 	// SignKey is the key used by the signing algorithm to verify the signature.
 	//
-	// Use base64 encoded string of the key bytes. It's a public key usually.
-	SignKey []byte `json:"sign_key"`
+	// For symmetric algorithems, use the key directly. e.g.
+	//
+	//   "<secret_bytes_in_base64_format>".
+	//
+	// For asymmetric algorithems, use the public key in x509 PEM format. e.g.
+	//
+	//   -----BEGIN PUBLIC KEY-----
+	//   ...
+	//   -----END PUBLIC KEY-----
+	SignKey string `json:"sign_key"`
 
 	// FromQuery defines a list of names to get tokens from the query parameters
 	// of an HTTP request.
@@ -104,7 +114,8 @@ type JWTAuth struct {
 	// Use dot notation to access nested claims.
 	MetaClaims map[string]string `json:"meta_claims"`
 
-	logger *zap.Logger
+	logger        *zap.Logger
+	parsedSignKey interface{} // can be []byte, *rsa.PublicKey, *ecdsa.PublicKey, etc.
 }
 
 // CaddyModule implements caddy.Module interface.
@@ -123,12 +134,21 @@ func (ja *JWTAuth) Provision(ctx caddy.Context) error {
 
 // Validate implements caddy.Validator interface.
 func (ja *JWTAuth) Validate() error {
-	if len(ja.SignKey) == 0 {
-		return errors.New("sign_key is required")
+	if keyBytes, asymmetric, err := parseSignKey(ja.SignKey); err != nil {
+		// Key(step 1): base64 -> raw bytes.
+		return fmt.Errorf("invalid sign_key: %w", err)
+	} else {
+		// Key(step 2): raw bytes -> parsed key.
+		if !asymmetric {
+			ja.parsedSignKey = keyBytes
+		} else if ja.parsedSignKey, err = x509.ParsePKIXPublicKey(keyBytes); err != nil {
+			return fmt.Errorf("invalid sign_key (asymmetric): %w", err)
+		}
 	}
+
 	if len(ja.UserClaims) == 0 {
 		ja.UserClaims = []string{
-			"username",
+			"sub",
 		}
 	}
 	for claim, placeholder := range ja.MetaClaims {
@@ -164,7 +184,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 		}
 
 		gotToken, err = parser.Parse(tokenString, func(*Token) (interface{}, error) {
-			return []byte(ja.SignKey), nil
+			return ja.parsedSignKey, nil
 		})
 		checked[tokenString] = struct{}{}
 
@@ -190,7 +210,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 				}
 			}
 			if !isValidIssuer {
-				err = errors.New("invalid issuer")
+				err = ErrInvalidIssuer
 				logger.Error("invalid token", zap.Error(err))
 				continue
 			}
@@ -205,7 +225,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 				}
 			}
 			if !isValidAudience {
-				err = errors.New("invalid audience")
+				err = ErrInvalidAudience
 				logger.Error("invalid token", zap.Error(err))
 				continue
 			}
@@ -214,7 +234,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 		// The token is valid. Continue to check the user claim.
 		claimName, gotUserID := getUserID(gotClaims, ja.UserClaims)
 		if gotUserID == "" {
-			err = errors.New("empty user claim")
+			err = ErrEmptyUserClaim
 			logger.Error("invalid token", zap.Strings("user_claims", ja.UserClaims), zap.Error(err))
 			continue
 		}
@@ -354,6 +374,28 @@ func desensitizedTokenString(token string) string {
 		mask = 16
 	}
 	return token[:mask] + "…" + token[len(token)-mask:]
+}
+
+// parseSignKey parses the given key and returns the key bytes.
+func parseSignKey(signKey string) (keyBytes []byte, asymmetric bool, err error) {
+	if len(signKey) == 0 {
+		return nil, false, ErrMissingSignKey
+	}
+	if strings.Contains(signKey, "-----BEGIN PUBLIC KEY-----") {
+		keyBytes, err = parsePEMFormattedPublicKey(signKey)
+		return keyBytes, true, err
+	}
+	keyBytes, err = base64.StdEncoding.DecodeString(signKey)
+	return keyBytes, false, err
+}
+
+func parsePEMFormattedPublicKey(pubKey string) ([]byte, error) {
+	block, _ := pem.Decode([]byte(pubKey))
+	if block != nil && block.Type == "PUBLIC KEY" {
+		return block.Bytes, nil
+	}
+
+	return nil, ErrInvalidPublicKey
 }
 
 // Interface guards

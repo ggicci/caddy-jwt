@@ -18,7 +18,7 @@
                       "from_query": ["access_token", "token"],
                       "from_header": ["X-Api-Token"],
                       "from_cookies": ["user_session"],
-                      "user_claims": ["uid", "user_id", "username", "login"],
+                      "user_claims": ["sub", "uid", "username", "login"],
                       "meta_claims": {
                         "IsAdmin": "is_admin",
                         "settings.payout.paypal.enabled": "is_paypal_enabled"

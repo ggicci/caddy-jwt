@@ -38,8 +38,27 @@ api.example.com {
 
 **NOTE**:
 
-1. Use `base64` to encode your key in the configuration.
-2. The priority of `from_xxx` is `from_query > from_header > from_cookies`.
+1. If you were using **symmetric** signing algorithms, e.g. `HS256`, encode your key bytes in `base64` format as `sign_key`'s value.
+
+```text
+TkZMNSowQmMjOVU2RUB0bm1DJkU3U1VONkd3SGZMbVk=
+```
+
+2. If you were using **asymmetric** signing algorithms, e.g. `RS256`, encode your public key in x.509 PEM format as `sign_key`'s value.
+
+```text
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArzekF0pqttKNJMOiZeyt
+RdYiabdyy/sdGQYWYJPGD2Q+QDU9ZqprDmKgFOTxUy/VUBnaYr7hOEMBe7I6dyaS
+5G0EGr8UXAwgD5Uvhmz6gqvKTV+FyQfw0bupbcM4CdMD7wQ9uOxDdMYm7g7gdGd6
+SSIVvmsGDibBI9S7nKlbcbmciCmxbAlwegTYSHHLjwWvDs2aAF8fxeRfphwQZKkd
+HekSZ090/c2V4i0ju2M814QyGERMoq+cSlmikCgRWoSZeWOSTj+rAZJyEAzlVL4z
+8ojzOpjmxw6pRYsS0vYIGEDuyiptf+ODC8smTbma/p3Vz+vzyLWPfReQY2RHtpUe
+hwIDAQAB
+-----END PUBLIC KEY-----
+```
+
+3. The priority of `from_xxx` is `from_query > from_header > from_cookies`.
 
 ## Test it by yourself
 
@@ -50,7 +69,7 @@ cd caddy-jwt
 # Build a caddy with this module and run an example server at localhost.
 make example
 
-TEST_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2NTU4OTI2NzAsImp0aSI6IjgyMjk0YTYzLTk2NjAtNGM2Mi1hOGE4LTVhNjI2NWVmY2Q0ZSIsInVpZCI6MzQwNjMyNzk2MzUxNjkzMiwidXNlcm5hbWUiOiJnZ2ljY2kiLCJuc2lkIjozNDA2MzMwMTU3MTM3OTI2fQ.HWHw4qX4OGgCyNNa5En_siktjpoulTNwABXpEwQI4Q8
+TEST_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjk5NTU4OTI2NzAsImp0aSI6IjgyMjk0YTYzLTk2NjAtNGM2Mi1hOGE4LTVhNjI2NWVmY2Q0ZSIsInN1YiI6IjM0MDYzMjc5NjM1MTY5MzIiLCJpc3MiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbSIsImF1ZCI6WyJodHRwczovL2FwaS5leGFtcGxlLmlvIl0sInVzZXJuYW1lIjoiZ2dpY2NpIn0.O8kvRO9y6xQO3AymqdFE7DDqLRBQhkntf78O9kF71F8
 
 curl -v "http://localhost:8080?access_token=${TEST_TOKEN}"
 # You should see authenticated output:
@@ -66,11 +85,12 @@ curl -v -H"Authorization: Bearer ${TEST_TOKEN}" "http://localhost:8080"
 
 ```json
 {
-  "exp": 1655892670,
+  "exp": 9955892670,
   "jti": "82294a63-9660-4c62-a8a8-5a6265efcd4e",
-  "uid": 3406327963516932,
-  "username": "ggicci",
-  "nsid": 3406330157137926
+  "sub": "3406327963516932",
+  "iss": "https://api.example.com",
+  "aud": ["https://api.example.io"],
+  "username": "ggicci"
 }
 ```
 
@@ -116,4 +136,4 @@ flowchart by https://asciiflow.com/
 ## References
 
 - **MUST READ**: [JWT Security Best Practices](https://curity.io/resources/learn/jwt-best-practices/)
-- Online Debuger: http://jwt.io/
+- Online Debugers: http://jwt.io/, https://token.dev/jwt/

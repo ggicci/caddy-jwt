@@ -26,7 +26,7 @@ func TestParsingCaddyfileNormalCase(t *testing.T) {
 	`),
 	}
 	expectedJA := &JWTAuth{
-		SignKey:           []byte("NFL5*0Bc#9U6E@tnmC&E7SUN6GwHfLmY"),
+		SignKey:           TestSignKey,
 		FromQuery:         []string{"access_token", "token", "_tok"},
 		FromHeader:        []string{"X-Api-Key"},
 		FromCookies:       []string{"user_session", "SESSID"},
@@ -63,14 +63,13 @@ func TestParsingCaddyfileError(t *testing.T) {
 	helper = httpcaddyfile.Helper{
 		Dispenser: caddyfile.NewTestDispenser(`
 	jwtauth {
-		sign_key TkZMNSowQmMjOVU2RUB0bm1DJkU3U1VONkd3SGZMbVk
+		sign_key TkZMNSowQmMjOVU2RUB0bm1DJkU3U1VONkd3SGZMbVk=
 	}
 	`),
 	}
 
 	_, err = parseCaddyfile(helper)
-	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), "sign_key")
+	assert.Nil(t, err)
 
 	// header_first is deprecated
 	helper = httpcaddyfile.Helper{
