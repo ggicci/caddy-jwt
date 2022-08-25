@@ -19,20 +19,22 @@ xcaddy --with github.com/ggicci/caddy-jwt
 ## Sample Caddyfile
 
 ```Caddyfile
+{
+	order jwtauth before basicauth
+}
+
 api.example.com {
-	route * {
-		jwtauth {
-			sign_key TkZMNSowQmMjOVU2RUB0bm1DJkU3U1VONkd3SGZMbVk=
-			from_query access_token token
-			from_header X-Api-Token
-			from_cookies user_session
-			issuer_whitelist https://api.example.com
-			audience_whitelist https://api.example.io https://learn.example.com
-			user_claims aud uid user_id username login
-			meta_claims "IsAdmin->is_admin" "settings.payout.paypal.enabled->is_paypal_enabled"
-		}
-		reverse_proxy http://172.16.0.14:8080
+	jwtauth {
+		sign_key TkZMNSowQmMjOVU2RUB0bm1DJkU3U1VONkd3SGZMbVk=
+		from_query access_token token
+		from_header X-Api-Token
+		from_cookies user_session
+		issuer_whitelist https://api.example.com
+		audience_whitelist https://api.example.io https://learn.example.com
+		user_claims aud uid user_id username login
+		meta_claims "IsAdmin->is_admin" "settings.payout.paypal.enabled->is_paypal_enabled"
 	}
+	reverse_proxy http://172.16.0.14:8080
 }
 ```
 
