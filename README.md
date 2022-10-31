@@ -135,6 +135,12 @@ Module **caddy-jwt** behaves like a **"JWT Validator"**. The authentication flow
 
 flowchart by https://asciiflow.com/
 
+## FAQ
+
+1. Q: How to deal with 401 responses on OPTIONS requests? (CORS related)
+
+   A: It should be handled separately by Caddy. Please read [#24](https://github.com/ggicci/caddy-jwt/issues/24) for more details.
+
 ## References
 
 - **MUST READ**: [JWT Security Best Practices](https://curity.io/resources/learn/jwt-best-practices/)
