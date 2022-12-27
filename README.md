@@ -26,6 +26,8 @@ xcaddy --with github.com/ggicci/caddy-jwt
 api.example.com {
 	jwtauth {
 		sign_key TkZMNSowQmMjOVU2RUB0bm1DJkU3U1VONkd3SGZMbVk=
+      sign_alg HS256
+      jwk_url https://api.example.com/jwk/keys
 		from_query access_token token
 		from_header X-Api-Token
 		from_cookies user_session
@@ -60,7 +62,16 @@ hwIDAQAB
 -----END PUBLIC KEY-----
 ```
 
-3. The priority of `from_xxx` is `from_query > from_header > from_cookies`.
+3. If you were using **JWK**, configure `jwk_url` and leave `sign_key` unset.
+
+4. `caddy-jwt` will determine the signing algorithm by looking into the following values:
+
+   1. `alg` value in the token header if set;
+   2. `alg` value of the matched JWK if using JWK;
+   3. value of the `sign_alg` config;
+   4. fallback to "HS256".
+
+5. The priority of `from_xxx` is `from_query > from_header > from_cookies`.
 
 ## Test it by yourself
 

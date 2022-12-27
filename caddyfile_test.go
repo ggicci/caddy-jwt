@@ -73,6 +73,18 @@ func TestParsingCaddyfileError(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "sign_alg")
 
+	// invalid jwk_url: missing
+	helper = httpcaddyfile.Helper{
+		Dispenser: caddyfile.NewTestDispenser(`
+	jwtauth {
+		jwk_url
+	}`),
+	}
+
+	_, err = parseCaddyfile(helper)
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "jwk_url")
+
 	// invalid sign_key: base64
 	helper = httpcaddyfile.Helper{
 		Dispenser: caddyfile.NewTestDispenser(`

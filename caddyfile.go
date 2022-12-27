@@ -36,6 +36,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				if !h.AllArgs(&ja.SignAlgorithm) {
 					return nil, h.Errf("invalid sign_alg")
 				}
+			case "jwk_url":
+				if !h.AllArgs(&ja.JWKURL) {
+					return nil, h.Errf("invalid jwk_url")
+				}
 			case "from_query":
 				ja.FromQuery = h.RemainingArgs()
 
