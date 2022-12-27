@@ -1,6 +1,8 @@
 package caddyjwt
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -9,7 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt"
+	"github.com/lestrrat-go/jwx/v2/jwa"
+	"github.com/lestrrat-go/jwx/v2/jwk"
+	"github.com/lestrrat-go/jwx/v2/jwt"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
@@ -31,17 +35,90 @@ HekSZ090/c2V4i0ju2M814QyGERMoq+cSlmikCgRWoSZeWOSTj+rAZJyEAzlVL4z
 8ojzOpjmxw6pRYsS0vYIGEDuyiptf+ODC8smTbma/p3Vz+vzyLWPfReQY2RHtpUe
 hwIDAQAB
 -----END PUBLIC KEY-----`
+
+	// JWK URL
+	TestJWKURL    = "http://127.0.0.1:2546/key"
+	TestJWKSetURL = "http://127.0.0.1:2546/keys"
+
+	jwkKey       jwk.Key // private key
+	jwkPubKey    jwk.Key // public key
+	jwkPubKeySet jwk.Set // public key set
 )
+
+func init() {
+	var err error
+	jwkKey = generateJWKKey()
+
+	jwkPubKey, err = jwkKey.PublicKey()
+	panicOnError(err)
+
+	anotherPubKey, err := generateJWKKey().PublicKey()
+	panicOnError(err)
+
+	jwkPubKeySet = jwk.NewSet()
+	jwkPubKeySet.AddKey(anotherPubKey)
+	jwkPubKeySet.AddKey(jwkPubKey)
+
+	startJWKServer()
+}
+
+func generateJWKKey() jwk.Key {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	panicOnError(err)
+	key, err := jwk.FromRaw(privateKey)
+	panicOnError(err)
+	jwk.AssignKeyID(key)                       // set "kid"
+	key.Set(jwk.AlgorithmKey, jwa.RS256)       // set "alg"
+	key.Set(jwk.KeyUsageKey, jwk.ForSignature) // set "use"
+	return key
+}
+
+func startJWKServer() {
+	go func() {
+		http.HandleFunc("/key", func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(jwkPubKey)
+		})
+		http.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(jwkPubKeySet)
+		})
+		panicOnError(http.ListenAndServe("127.0.0.1:2546", nil))
+	}()
+}
+
+func panicOnError(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+type MapClaims map[string]interface{}
+
+func buildToken(claims MapClaims) jwt.Token {
+	tb := jwt.NewBuilder()
+	for k, v := range claims {
+		tb = tb.Claim(k, v)
+	}
+	token, err := tb.Build()
+	panicOnError(err)
+	return token
+}
 
 // issueTokenString issues a token string with the given claims,
 // using HS256 signing algorithm.
 func issueTokenString(claims MapClaims) string {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(RawTestSignKey)
-	if err != nil {
-		panic(err)
-	}
-	return tokenString
+	token := buildToken(claims)
+	tokenBytes, err := jwt.Sign(token, jwt.WithKey(jwa.HS256, RawTestSignKey))
+	panicOnError(err)
+
+	return string(tokenBytes)
+}
+
+func issueTokenStringJWK(claims MapClaims) string {
+	token := buildToken(claims)
+	tokenBytes, err := jwt.Sign(token, jwt.WithKey(jwa.RS256, jwkKey))
+	panicOnError(err)
+
+	return string(tokenBytes)
 }
 
 func TestValidate_SignKey(t *testing.T) {
@@ -56,6 +133,13 @@ func TestValidate_SignKey(t *testing.T) {
 		SignKey: TestSignKey,
 	}
 	assert.Nil(t, ja.Validate())
+}
+
+func TestValidate_usingJWK(t *testing.T) {
+	ja := &JWTAuth{JWKURL: TestJWKSetURL, logger: testLogger}
+	assert.True(t, ja.usingJWK())
+	err := ja.Validate()
+	assert.Nil(t, err)
 }
 
 func TestValidate_InvalidMetaClaims(t *testing.T) {
@@ -527,4 +611,36 @@ func Test_AsymmetricAlgorithm(t *testing.T) {
 func Test_AsymmetricAlgorithm_InvalidPubKey(t *testing.T) {
 	ja := &JWTAuth{SignKey: `-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAA ... invalid\n-----END PUBLIC KEY-----`, UserClaims: []string{"login"}, logger: testLogger}
 	assert.ErrorIs(t, ja.Validate(), ErrInvalidPublicKey)
+}
+
+func Test_JWK(t *testing.T) {
+	time.Sleep(3 * time.Second)
+	ja := &JWTAuth{JWKURL: TestJWKURL, logger: testLogger}
+	assert.Nil(t, ja.Validate())
+	assert.Equal(t, 1, ja.jwkCachedSet.Len())
+
+	token := issueTokenStringJWK(MapClaims{"sub": "ggicci"})
+	rw := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", "Bearer "+token)
+	gotUser, authenticated, err := ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.True(t, authenticated)
+	assert.Equal(t, User{ID: "ggicci"}, gotUser)
+}
+
+func Test_JWKSet(t *testing.T) {
+	time.Sleep(3 * time.Second)
+	ja := &JWTAuth{JWKURL: TestJWKSetURL, logger: testLogger}
+	assert.Nil(t, ja.Validate())
+	assert.Equal(t, 2, ja.jwkCachedSet.Len())
+
+	token := issueTokenStringJWK(MapClaims{"sub": "ggicci"})
+	rw := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", "Bearer "+token)
+	gotUser, authenticated, err := ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.True(t, authenticated)
+	assert.Equal(t, User{ID: "ggicci"}, gotUser)
 }
