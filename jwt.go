@@ -2,6 +2,7 @@
 package caddyjwt
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -14,7 +15,10 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/caddyauth"
-	"github.com/golang-jwt/jwt"
+	"github.com/lestrrat-go/jwx/v2/jwa"
+	"github.com/lestrrat-go/jwx/v2/jwk"
+	"github.com/lestrrat-go/jwx/v2/jws"
+	"github.com/lestrrat-go/jwx/v2/jwt"
 	"go.uber.org/zap"
 )
 
@@ -24,7 +28,6 @@ func init() {
 
 type User = caddyauth.User
 type Token = jwt.Token
-type MapClaims = jwt.MapClaims
 
 // JWTAuth facilitates JWT (JSON Web Token) authentication.
 type JWTAuth struct {
@@ -39,7 +42,23 @@ type JWTAuth struct {
 	//     -----BEGIN PUBLIC KEY-----
 	//     ...
 	//     -----END PUBLIC KEY-----
+	// This is an optional field. You can instead provide JWKURL to use JWKs.
 	SignKey string `json:"sign_key"`
+
+	// JWKURL is the URL where a provider publishes their JWKs. The URL must
+	// publish the JWKs in the standard format as described in
+	// https://tools.ietf.org/html/rfc7517.
+	// If you'd like to use JWK, set this field and leave SignKey unset.
+	JWKURL string `json:"jwk_url"`
+
+	// SignAlgorithm is the the signing algorithm used. Available values are defined in
+	// https://www.rfc-editor.org/rfc/rfc7518#section-3.1
+	// This is an optional field, which is used for determining the signing algorithm.
+	// We will try to determine the algorithm automatically from the following sources:
+	// 1. The "alg" field in the JWT header.
+	// 2. The "alg" field in the matched JWK (if JWKURL is provided).
+	// 3. The value set here.
+	SignAlgorithm string `json:"sign_alg"`
 
 	// FromQuery defines a list of names to get tokens from the query parameters
 	// of an HTTP request.
@@ -116,6 +135,7 @@ type JWTAuth struct {
 
 	logger        *zap.Logger
 	parsedSignKey interface{} // can be []byte, *rsa.PublicKey, *ecdsa.PublicKey, etc.
+	jwkCachedSet  jwk.Set
 }
 
 // CaddyModule implements caddy.Module interface.
@@ -132,17 +152,45 @@ func (ja *JWTAuth) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// Error implements httprc.ErrSink interface.
+// It is used to log the error message provided by other modules, e.g. jwk.
+func (ja *JWTAuth) Error(err error) {
+	ja.logger.Error("error", zap.Error(err))
+}
+
+func (ja *JWTAuth) usingJWK() bool {
+	return ja.SignKey == "" && ja.JWKURL != ""
+}
+
+func (ja *JWTAuth) setupJWKLoader() {
+	cache := jwk.NewCache(context.Background(), jwk.WithErrSink(ja))
+	cache.Register(ja.JWKURL)
+	ja.jwkCachedSet = jwk.NewCachedSet(cache, ja.JWKURL)
+	ja.logger.Info("using JWKs from URL", zap.String("url", ja.JWKURL), zap.Int("loaded_keys", ja.jwkCachedSet.Len()))
+}
+
 // Validate implements caddy.Validator interface.
 func (ja *JWTAuth) Validate() error {
-	if keyBytes, asymmetric, err := parseSignKey(ja.SignKey); err != nil {
-		// Key(step 1): base64 -> raw bytes.
-		return fmt.Errorf("invalid sign_key: %w", err)
+	if ja.usingJWK() {
+		ja.setupJWKLoader()
 	} else {
-		// Key(step 2): raw bytes -> parsed key.
-		if !asymmetric {
-			ja.parsedSignKey = keyBytes
-		} else if ja.parsedSignKey, err = x509.ParsePKIXPublicKey(keyBytes); err != nil {
-			return fmt.Errorf("invalid sign_key (asymmetric): %w", err)
+		if keyBytes, asymmetric, err := parseSignKey(ja.SignKey); err != nil {
+			// Key(step 1): base64 -> raw bytes.
+			return fmt.Errorf("invalid sign_key: %w", err)
+		} else {
+			// Key(step 2): raw bytes -> parsed key.
+			if !asymmetric {
+				ja.parsedSignKey = keyBytes
+			} else if ja.parsedSignKey, err = x509.ParsePKIXPublicKey(keyBytes); err != nil {
+				return fmt.Errorf("invalid sign_key (asymmetric): %w", err)
+			}
+
+			if ja.SignAlgorithm != "" {
+				var alg jwa.SignatureAlgorithm
+				if err := alg.Accept(ja.SignAlgorithm); err != nil {
+					return fmt.Errorf("%w: %v", ErrInvalidSignAlgorithm, err)
+				}
+			}
 		}
 	}
 
@@ -159,11 +207,34 @@ func (ja *JWTAuth) Validate() error {
 	return nil
 }
 
+func (ja *JWTAuth) keyProvider() jws.KeyProviderFunc {
+	return func(_ context.Context, sink jws.KeySink, sig *jws.Signature, _ *jws.Message) error {
+		if ja.usingJWK() {
+			kid := sig.ProtectedHeaders().KeyID()
+			key, found := ja.jwkCachedSet.LookupKeyID(kid)
+			if !found {
+				return fmt.Errorf("key not found: %s", kid)
+			}
+			sink.Key(ja.determineSigningAlgorithm(key.Algorithm()), key)
+		} else {
+			sink.Key(ja.determineSigningAlgorithm(sig.ProtectedHeaders().Algorithm()), ja.parsedSignKey)
+		}
+		return nil
+	}
+}
+
+func (ja *JWTAuth) determineSigningAlgorithm(alg jwa.KeyAlgorithm) jwa.SignatureAlgorithm {
+	if alg.String() != "" {
+		return jwa.SignatureAlgorithm(alg.String())
+	}
+	return jwa.SignatureAlgorithm(ja.SignAlgorithm) // can be ""
+}
+
 // Authenticate validates the JWT in the request and returns the user, if valid.
 func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, bool, error) {
 	var (
+		gotToken   Token
 		candidates []string
-		gotToken   *Token
 		err        error
 	)
 
@@ -173,9 +244,6 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 
 	candidates = append(candidates, getTokensFromHeader(r, []string{"Authorization"})...)
 	checked := make(map[string]struct{})
-	parser := &jwt.Parser{
-		UseJSONNumber: true, // parse number in JSON object to json.Number instead of float64
-	}
 
 	for _, candidateToken := range candidates {
 		tokenString := normToken(candidateToken)
@@ -183,9 +251,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 			continue
 		}
 
-		gotToken, err = parser.Parse(tokenString, func(*Token) (interface{}, error) {
-			return ja.parsedSignKey, nil
-		})
+		gotToken, err = jwt.ParseString(tokenString, jwt.WithKeyProvider(ja.keyProvider()))
 		checked[tokenString] = struct{}{}
 
 		logger := ja.logger.With(zap.String("token_string", desensitizedTokenString(tokenString)))
@@ -194,7 +260,6 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 			continue
 		}
 
-		var gotClaims = gotToken.Claims.(MapClaims)
 		// By default, the following claims will be verified:
 		//   - "exp"
 		//   - "iat"
@@ -204,7 +269,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 		if len(ja.IssuerWhitelist) > 0 {
 			isValidIssuer := false
 			for _, issuer := range ja.IssuerWhitelist {
-				if gotClaims.VerifyIssuer(issuer, true) {
+				if jwt.Validate(gotToken, jwt.WithIssuer(issuer)) == nil {
 					isValidIssuer = true
 					break
 				}
@@ -219,7 +284,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 		if len(ja.AudienceWhitelist) > 0 {
 			isValidAudience := false
 			for _, audience := range ja.AudienceWhitelist {
-				if gotClaims.VerifyAudience(audience, true) {
+				if jwt.Validate(gotToken, jwt.WithAudience(audience)) == nil {
 					isValidAudience = true
 					break
 				}
@@ -232,7 +297,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 		}
 
 		// The token is valid. Continue to check the user claim.
-		claimName, gotUserID := getUserID(gotClaims, ja.UserClaims)
+		claimName, gotUserID := getUserID(gotToken, ja.UserClaims)
 		if gotUserID == "" {
 			err = ErrEmptyUserClaim
 			logger.Error("invalid token", zap.Strings("user_claims", ja.UserClaims), zap.Error(err))
@@ -242,7 +307,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 		// Successfully authenticated!
 		var user = User{
 			ID:       gotUserID,
-			Metadata: getUserMetadata(gotClaims, ja.MetaClaims),
+			Metadata: getUserMetadata(gotToken, ja.MetaClaims),
 		}
 		logger.Info("user authenticated", zap.String("user_claim", claimName), zap.String("id", gotUserID))
 		return user, true, nil
@@ -290,23 +355,23 @@ func getTokensFromCookies(r *http.Request, names []string) []string {
 	return tokens
 }
 
-func getUserID(claims MapClaims, names []string) (string, string) {
+func getUserID(token Token, names []string) (string, string) {
 	for _, name := range names {
-		if userClaim, ok := claims[name]; ok {
+		if userClaim, ok := token.Get(name); ok {
 			switch val := userClaim.(type) {
 			case string:
 				return name, val
-			case json.Number:
-				return name, val.String()
+			case float64:
+				return name, strconv.FormatFloat(val, 'f', -1, 64)
 			}
 		}
 	}
 	return "", ""
 }
 
-func queryNested(claims MapClaims, path []string) (interface{}, bool) {
+func queryNested(claims map[string]interface{}, path []string) (interface{}, bool) {
 	var (
-		object map[string]interface{} = (map[string]interface{})(claims)
+		object = claims
 		ok     bool
 	)
 	for i := 0; i < len(path)-1; i++ {
@@ -319,14 +384,15 @@ func queryNested(claims MapClaims, path []string) (interface{}, bool) {
 	return object[lastKey], true
 }
 
-func getUserMetadata(claims MapClaims, placeholdersMap map[string]string) map[string]string {
+func getUserMetadata(token Token, placeholdersMap map[string]string) map[string]string {
 	if len(placeholdersMap) == 0 {
 		return nil
 	}
 
+	claims, _ := token.AsMap(context.Background()) // error ignored
 	metadata := make(map[string]string)
 	for claim, placeholder := range placeholdersMap {
-		claimValue, ok := claims[claim]
+		claimValue, ok := token.Get(claim)
 
 		// Query nested claims.
 		if !ok && strings.Contains(claim, ".") {
@@ -379,7 +445,7 @@ func desensitizedTokenString(token string) string {
 // parseSignKey parses the given key and returns the key bytes.
 func parseSignKey(signKey string) (keyBytes []byte, asymmetric bool, err error) {
 	if len(signKey) == 0 {
-		return nil, false, ErrMissingSignKey
+		return nil, false, ErrMissingKeys
 	}
 	if strings.Contains(signKey, "-----BEGIN PUBLIC KEY-----") {
 		keyBytes, err = parsePEMFormattedPublicKey(signKey)

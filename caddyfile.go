@@ -17,10 +17,10 @@ func init() {
 
 // parseCaddyfile sets up the handler from Caddyfile. Syntax:
 //
-//    jwtauth [<matcher>] {
-//        sign_key <sign_key>
-//        ...
-//    }
+//	jwtauth [<matcher>] {
+//	    sign_key <sign_key>
+//	    ...
+//	}
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var ja JWTAuth
 
@@ -31,6 +31,14 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			case "sign_key":
 				if !h.AllArgs(&ja.SignKey) {
 					return nil, h.Errf("invalid sign_key")
+				}
+			case "sign_alg":
+				if !h.AllArgs(&ja.SignAlgorithm) {
+					return nil, h.Errf("invalid sign_alg")
+				}
+			case "jwk_url":
+				if !h.AllArgs(&ja.JWKURL) {
+					return nil, h.Errf("invalid jwk_url")
 				}
 			case "from_query":
 				ja.FromQuery = h.RemainingArgs()

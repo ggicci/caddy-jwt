@@ -15,6 +15,7 @@ func TestParsingCaddyfileNormalCase(t *testing.T) {
 		Dispenser: caddyfile.NewTestDispenser(`
 	jwtauth {
 		sign_key "TkZMNSowQmMjOVU2RUB0bm1DJkU3U1VONkd3SGZMbVk="
+		sign_alg HS256
 		from_query access_token token _tok
 		from_header X-Api-Key
 		from_cookies user_session SESSID
@@ -27,6 +28,7 @@ func TestParsingCaddyfileNormalCase(t *testing.T) {
 	}
 	expectedJA := &JWTAuth{
 		SignKey:           TestSignKey,
+		SignAlgorithm:     "HS256",
 		FromQuery:         []string{"access_token", "token", "_tok"},
 		FromHeader:        []string{"X-Api-Key"},
 		FromCookies:       []string{"user_session", "SESSID"},
@@ -58,6 +60,30 @@ func TestParsingCaddyfileError(t *testing.T) {
 	_, err := parseCaddyfile(helper)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "sign_key")
+
+	// invalid sign_alg: missing
+	helper = httpcaddyfile.Helper{
+		Dispenser: caddyfile.NewTestDispenser(`
+	jwtauth {
+		sign_alg
+	}`),
+	}
+
+	_, err = parseCaddyfile(helper)
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "sign_alg")
+
+	// invalid jwk_url: missing
+	helper = httpcaddyfile.Helper{
+		Dispenser: caddyfile.NewTestDispenser(`
+	jwtauth {
+		jwk_url
+	}`),
+	}
+
+	_, err = parseCaddyfile(helper)
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "jwk_url")
 
 	// invalid sign_key: base64
 	helper = httpcaddyfile.Helper{
