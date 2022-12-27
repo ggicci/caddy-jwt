@@ -66,10 +66,9 @@ hwIDAQAB
 
 4. `caddy-jwt` will determine the signing algorithm by looking into the following values:
 
-   1. `alg` value in the token header if set;
+   1. `alg` value in the JWT header;
    2. `alg` value of the matched JWK if using JWK;
-   3. value of the `sign_alg` config;
-   4. fallback to "HS256".
+   3. value of the `sign_alg` config.
 
 5. The priority of `from_xxx` is `from_query > from_header > from_cookies`.
 

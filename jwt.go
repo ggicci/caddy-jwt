@@ -45,18 +45,20 @@ type JWTAuth struct {
 	// This is an optional field. You can instead provide JWKURL to use JWKs.
 	SignKey string `json:"sign_key"`
 
-	// SignAlgorithm is the the signing algorithm used. Available values are defined in
-	// https://www.rfc-editor.org/rfc/rfc7518#section-3.1
-	// This is an optional field and it's used along with SignKey.
-	// Firstly, we will try to guess the algorithm from the token.
-	// If it fails, we will use the algorithm specified here.
-	// If this field is not specified, we will use "HS256" as the default value.
-	SignAlgorithm string `json:"sign_alg"`
-
 	// JWKURL is the URL where a provider publishes their JWKs. The URL must
 	// publish the JWKs in the standard format as described in
 	// https://tools.ietf.org/html/rfc7517.
+	// If you'd like to use JWK, set this field and leave SignKey unset.
 	JWKURL string `json:"jwk_url"`
+
+	// SignAlgorithm is the the signing algorithm used. Available values are defined in
+	// https://www.rfc-editor.org/rfc/rfc7518#section-3.1
+	// This is an optional field, which is used for determining the signing algorithm.
+	// We will try to determine the algorithm automatically from the following sources:
+	// 1. The "alg" field in the JWT header.
+	// 2. The "alg" field in the matched JWK (if JWKURL is provided).
+	// 3. The value set here.
+	SignAlgorithm string `json:"sign_alg"`
 
 	// FromQuery defines a list of names to get tokens from the query parameters
 	// of an HTTP request.
@@ -213,21 +215,19 @@ func (ja *JWTAuth) keyProvider() jws.KeyProviderFunc {
 			if !found {
 				return fmt.Errorf("key not found: %s", kid)
 			}
-			sink.Key(jwa.SignatureAlgorithm(key.Algorithm().String()), key)
-			return nil
+			sink.Key(ja.determineSigningAlgorithm(key.Algorithm()), key)
 		} else {
-			alg := sig.ProtectedHeaders().Algorithm()
-			if alg == "" {
-				if ja.SignAlgorithm == "" {
-					alg = jwa.HS256
-				} else {
-					alg = jwa.SignatureAlgorithm(ja.SignAlgorithm)
-				}
-			}
-			sink.Key(alg, ja.parsedSignKey)
+			sink.Key(ja.determineSigningAlgorithm(sig.ProtectedHeaders().Algorithm()), ja.parsedSignKey)
 		}
 		return nil
 	}
+}
+
+func (ja *JWTAuth) determineSigningAlgorithm(alg jwa.KeyAlgorithm) jwa.SignatureAlgorithm {
+	if alg.String() != "" {
+		return jwa.SignatureAlgorithm(alg.String())
+	}
+	return jwa.SignatureAlgorithm(ja.SignAlgorithm) // can be ""
 }
 
 // Authenticate validates the JWT in the request and returns the user, if valid.
