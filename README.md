@@ -26,8 +26,8 @@ xcaddy --with github.com/ggicci/caddy-jwt
 api.example.com {
 	jwtauth {
 		sign_key TkZMNSowQmMjOVU2RUB0bm1DJkU3U1VONkd3SGZMbVk=
-      sign_alg HS256
-      jwk_url https://api.example.com/jwk/keys
+		sign_alg HS256
+		jwk_url https://api.example.com/jwk/keys
 		from_query access_token token
 		from_header X-Api-Token
 		from_cookies user_session

@@ -146,7 +146,7 @@ func (JWTAuth) CaddyModule() caddy.ModuleInfo {
 
 // Provision implements caddy.Provisioner interface.
 func (ja *JWTAuth) Provision(ctx caddy.Context) error {
-	ja.logger = ctx.Logger()
+	ja.logger = ctx.Logger(ja)
 	return nil
 }
 
