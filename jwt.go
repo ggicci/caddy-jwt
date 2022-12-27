@@ -188,7 +188,7 @@ func (ja *JWTAuth) Validate() error {
 			if ja.SignAlgorithm != "" {
 				var alg jwa.SignatureAlgorithm
 				if err := alg.Accept(ja.SignAlgorithm); err != nil {
-					return fmt.Errorf("invalid sign_algorithm: %w", err)
+					return fmt.Errorf("%w: %v", ErrInvalidSignAlgorithm, err)
 				}
 			}
 		}
@@ -363,8 +363,6 @@ func getUserID(token Token, names []string) (string, string) {
 				return name, val
 			case float64:
 				return name, strconv.FormatFloat(val, 'f', -1, 64)
-			case json.Number:
-				return name, val.String()
 			}
 		}
 	}
@@ -447,7 +445,7 @@ func desensitizedTokenString(token string) string {
 // parseSignKey parses the given key and returns the key bytes.
 func parseSignKey(signKey string) (keyBytes []byte, asymmetric bool, err error) {
 	if len(signKey) == 0 {
-		return nil, false, ErrMissingSignKey
+		return nil, false, ErrMissingKeys
 	}
 	if strings.Contains(signKey, "-----BEGIN PUBLIC KEY-----") {
 		keyBytes, err = parsePEMFormattedPublicKey(signKey)

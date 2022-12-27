@@ -39,12 +39,14 @@ hwIDAQAB
 -----END PUBLIC KEY-----`
 
 	// JWK URL
-	TestJWKURL    = "http://127.0.0.1:2546/key"
-	TestJWKSetURL = "http://127.0.0.1:2546/keys"
+	TestJWKURL                = "http://127.0.0.1:2546/key"
+	TestJWKSetURL             = "http://127.0.0.1:2546/keys"
+	TestJWKSetURLInapplicable = "http://127.0.0.1:2546/keys_inapplicable"
 
-	jwkKey       jwk.Key // private key
-	jwkPubKey    jwk.Key // public key
-	jwkPubKeySet jwk.Set // public key set
+	jwkKey                   jwk.Key // private key
+	jwkPubKey                jwk.Key // public key
+	jwkPubKeySet             jwk.Set // public key set
+	jwkPubKeySetInapplicable jwk.Set // public key set (inapplicable)
 )
 
 func init() {
@@ -54,12 +56,18 @@ func init() {
 	jwkPubKey, err = jwkKey.PublicKey()
 	panicOnError(err)
 
-	anotherPubKey, err := generateJWK().PublicKey()
+	anotherPubKeyI, err := generateJWK().PublicKey()
+	panicOnError(err)
+	anotherPubKeyII, err := generateJWK().PublicKey()
 	panicOnError(err)
 
 	jwkPubKeySet = jwk.NewSet()
-	jwkPubKeySet.AddKey(anotherPubKey)
+	jwkPubKeySet.AddKey(anotherPubKeyI)
 	jwkPubKeySet.AddKey(jwkPubKey)
+
+	jwkPubKeySetInapplicable = jwk.NewSet()
+	jwkPubKeySetInapplicable.AddKey(anotherPubKeyI)
+	jwkPubKeySetInapplicable.AddKey(anotherPubKeyII)
 
 	publishJWKsOnLocalServer()
 }
@@ -82,6 +90,9 @@ func publishJWKsOnLocalServer() {
 		})
 		http.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(jwkPubKeySet)
+		})
+		http.HandleFunc("/keys_inapplicable", func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(jwkPubKeySetInapplicable)
 		})
 		panicOnError(http.ListenAndServe("127.0.0.1:2546", nil))
 	}()
@@ -126,13 +137,22 @@ func TestValidate_SignKey(t *testing.T) {
 	ja := &JWTAuth{}
 	err := ja.Validate()
 	assert.NotNil(t, err)
-	assert.ErrorIs(t, err, ErrMissingSignKey)
+	assert.ErrorIs(t, err, ErrMissingKeys)
 
 	// having sign_key
 	ja = &JWTAuth{
 		SignKey: TestSignKey,
 	}
 	assert.Nil(t, ja.Validate())
+}
+
+func TestValidate_SignAlg(t *testing.T) {
+	// invalid sign_alg
+	ja := &JWTAuth{
+		SignKey:       TestSignKey,
+		SignAlgorithm: "ABC",
+	}
+	assert.ErrorIs(t, ja.Validate(), ErrInvalidSignAlgorithm)
 }
 
 func TestValidate_usingJWK(t *testing.T) {
@@ -613,7 +633,7 @@ func Test_AsymmetricAlgorithm_InvalidPubKey(t *testing.T) {
 	assert.ErrorIs(t, ja.Validate(), ErrInvalidPublicKey)
 }
 
-func Test_JWK(t *testing.T) {
+func TestJWK(t *testing.T) {
 	time.Sleep(3 * time.Second)
 	ja := &JWTAuth{JWKURL: TestJWKURL, logger: testLogger}
 	assert.Nil(t, ja.Validate())
@@ -629,7 +649,7 @@ func Test_JWK(t *testing.T) {
 	assert.Equal(t, User{ID: "ggicci"}, gotUser)
 }
 
-func Test_JWKSet(t *testing.T) {
+func TestJWKSet(t *testing.T) {
 	time.Sleep(3 * time.Second)
 	ja := &JWTAuth{JWKURL: TestJWKSetURL, logger: testLogger}
 	assert.Nil(t, ja.Validate())
@@ -643,4 +663,20 @@ func Test_JWKSet(t *testing.T) {
 	assert.Nil(t, err)
 	assert.True(t, authenticated)
 	assert.Equal(t, User{ID: "ggicci"}, gotUser)
+}
+
+func TestJWKSet_KeyNotFound(t *testing.T) {
+	time.Sleep(3 * time.Second)
+	ja := &JWTAuth{JWKURL: TestJWKSetURLInapplicable, logger: testLogger}
+	assert.Nil(t, ja.Validate())
+	assert.Equal(t, 2, ja.jwkCachedSet.Len())
+
+	token := issueTokenStringJWK(MapClaims{"sub": "ggicci"})
+	rw := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", "Bearer "+token)
+	gotUser, authenticated, err := ja.Authenticate(rw, r)
+	assert.Error(t, err)
+	assert.False(t, authenticated)
+	assert.Empty(t, gotUser.ID)
 }
