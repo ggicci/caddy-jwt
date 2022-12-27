@@ -18,6 +18,8 @@ import (
 	"go.uber.org/zap"
 )
 
+type MapClaims map[string]interface{}
+
 var (
 	testLogger, _ = zap.NewDevelopment()
 
@@ -47,22 +49,22 @@ hwIDAQAB
 
 func init() {
 	var err error
-	jwkKey = generateJWKKey()
+	jwkKey = generateJWK()
 
 	jwkPubKey, err = jwkKey.PublicKey()
 	panicOnError(err)
 
-	anotherPubKey, err := generateJWKKey().PublicKey()
+	anotherPubKey, err := generateJWK().PublicKey()
 	panicOnError(err)
 
 	jwkPubKeySet = jwk.NewSet()
 	jwkPubKeySet.AddKey(anotherPubKey)
 	jwkPubKeySet.AddKey(jwkPubKey)
 
-	startJWKServer()
+	publishJWKsOnLocalServer()
 }
 
-func generateJWKKey() jwk.Key {
+func generateJWK() jwk.Key {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	panicOnError(err)
 	key, err := jwk.FromRaw(privateKey)
@@ -73,7 +75,7 @@ func generateJWKKey() jwk.Key {
 	return key
 }
 
-func startJWKServer() {
+func publishJWKsOnLocalServer() {
 	go func() {
 		http.HandleFunc("/key", func(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(jwkPubKey)
@@ -90,8 +92,6 @@ func panicOnError(err error) {
 		panic(err)
 	}
 }
-
-type MapClaims map[string]interface{}
 
 func buildToken(claims MapClaims) jwt.Token {
 	tb := jwt.NewBuilder()
