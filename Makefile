@@ -3,7 +3,7 @@
 # 2. xcaddy: https://github.com/caddyserver/xcaddy
 
 default: build
-export CADDY_VERSION=v2.4.3
+# export CADDY_VERSION=v2.6.4
 
 GO=go
 GOTEST=$(GO) test
