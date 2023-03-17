@@ -147,9 +147,13 @@ flowchart by https://asciiflow.com/
 
 ## FAQ
 
-1. Q: How to deal with 401 responses on OPTIONS requests? (CORS related)
+**Q1**: How to deal with 401 responses on OPTIONS requests? (CORS related)
 
-   A: It should be handled separately by Caddy. Please read [#24](https://github.com/ggicci/caddy-jwt/issues/24) for more details.
+It should be handled separately by Caddy. Please read [#24](https://github.com/ggicci/caddy-jwt/issues/24) for more details.
+
+**Q2**: What to note when using a public key as the value of `sign_key` in Caddyfile?
+
+Using multi-line content in a directive [should be quoted](https://caddyserver.com/docs/caddyfile/concepts#tokens-and-quotes) as Caddy's documentation says. And the public key should be represented in PKCS#1 PEM format. Here's a simple command to derive such a public key from an RSA private key: `openssl rsa -in input.rsa -pubout`. Related: [#36](https://github.com/ggicci/caddy-jwt/issues/36).
 
 ## References
 

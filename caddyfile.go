@@ -30,15 +30,15 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			switch opt {
 			case "sign_key":
 				if !h.AllArgs(&ja.SignKey) {
-					return nil, h.Errf("invalid sign_key")
+					return nil, h.Errf("invalid sign_key: %q", ja.SignKey)
 				}
 			case "sign_alg":
 				if !h.AllArgs(&ja.SignAlgorithm) {
-					return nil, h.Errf("invalid sign_alg")
+					return nil, h.Errf("invalid sign_alg: %q", ja.SignAlgorithm)
 				}
 			case "jwk_url":
 				if !h.AllArgs(&ja.JWKURL) {
-					return nil, h.Errf("invalid jwk_url")
+					return nil, h.Errf("invalid jwk_url: %q", ja.JWKURL)
 				}
 			case "from_query":
 				ja.FromQuery = h.RemainingArgs()
