@@ -428,7 +428,19 @@ func stringify(val interface{}) string {
 		return stringer.String()
 	}
 
+	if slice, ok := val.([]interface{}); ok {
+		return stringifySlice(slice)
+	}
+
 	return ""
+}
+
+func stringifySlice(slice []interface{}) string {
+	var result []string
+	for _, val := range slice {
+		result = append(result, stringify(val))
+	}
+	return strings.Join(result, ",")
 }
 
 func desensitizedTokenString(token string) string {

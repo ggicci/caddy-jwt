@@ -523,7 +523,7 @@ func TestAuthenticate_PopulateUserMetadata(t *testing.T) {
 			"IsAdmin":                        "is_admin",
 			"registerTime":                   "registered_at",
 			"absent":                         "absent", // not found in JWT payload, final ""
-			"groups":                         "groups", // unsupported array type, final ""
+			"groups":                         "groups", // supported array type, final "csgo,dota2"
 			"settings.role":                  "role",   // supported nested claim, final "admin"
 			"settings.payout.paypal.enabled": "is_paypal_enabled",
 			"settings.payout.alipay.enabled": "is_alipay_enabled",
@@ -558,7 +558,7 @@ func TestAuthenticate_PopulateUserMetadata(t *testing.T) {
 	assert.Equal(t, "true", gotUser.Metadata["is_admin"])
 	assert.Equal(t, "2000-01-02T15:23:18Z", gotUser.Metadata["registered_at"])
 	assert.Equal(t, "", gotUser.Metadata["absent"])
-	assert.Equal(t, "", gotUser.Metadata["groups"])
+	assert.Equal(t, "csgo,dota2", gotUser.Metadata["groups"])
 	assert.Equal(t, "admin", gotUser.Metadata["role"])
 	assert.Equal(t, "true", gotUser.Metadata["is_paypal_enabled"])
 	assert.Equal(t, "", gotUser.Metadata["is_alipay_enabled"])
