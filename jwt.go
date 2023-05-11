@@ -213,7 +213,10 @@ func (ja *JWTAuth) keyProvider() jws.KeyProviderFunc {
 			kid := sig.ProtectedHeaders().KeyID()
 			key, found := ja.jwkCachedSet.LookupKeyID(kid)
 			if !found {
-				return fmt.Errorf("key not found: %s", kid)
+				if kid == "" {
+					return fmt.Errorf("missing kid in JWT header")
+				}
+				return fmt.Errorf("key specified by kid %q not found in JWKs", kid)
 			}
 			sink.Key(ja.determineSigningAlgorithm(key.Algorithm()), key)
 		} else {
