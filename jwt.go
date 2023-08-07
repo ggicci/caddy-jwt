@@ -164,16 +164,14 @@ func (ja *JWTAuth) usingJWK() bool {
 	return ja.SignKey == "" && ja.JWKURL != ""
 }
 
-func (ja *JWTAuth) setupJWKLoader() error {
+func (ja *JWTAuth) setupJWKLoader() {
 	cache := jwk.NewCache(context.Background(), jwk.WithErrSink(ja))
 	cache.Register(ja.JWKURL)
 	ja.jwkCache = cache
-	if err := ja.refreshJWKCache(); err != nil {
-		return err
-	}
+	// ignore any error loading the JWKS endpoint now as it may not be available at startup
+	_ = ja.refreshJWKCache()
 	ja.jwkCachedSet = jwk.NewCachedSet(cache, ja.JWKURL)
 	ja.logger.Info("using JWKs from URL", zap.String("url", ja.JWKURL), zap.Int("loaded_keys", ja.jwkCachedSet.Len()))
-	return nil
 }
 
 // refreshJWKCache refreshes the JWK cache. It validates the JWKs from the given URL.
@@ -185,9 +183,7 @@ func (ja *JWTAuth) refreshJWKCache() error {
 // Validate implements caddy.Validator interface.
 func (ja *JWTAuth) Validate() error {
 	if ja.usingJWK() {
-		if err := ja.setupJWKLoader(); err != nil {
-			return fmt.Errorf("failed to setup JWK loader: %w", err)
-		}
+		ja.setupJWKLoader()
 	} else {
 		if keyBytes, asymmetric, err := parseSignKey(ja.SignKey); err != nil {
 			// Key(step 1): base64 -> raw bytes.
