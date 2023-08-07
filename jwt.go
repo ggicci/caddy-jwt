@@ -135,7 +135,9 @@ type JWTAuth struct {
 
 	logger        *zap.Logger
 	parsedSignKey interface{} // can be []byte, *rsa.PublicKey, *ecdsa.PublicKey, etc.
-	jwkCachedSet  jwk.Set
+
+	jwkCache     *jwk.Cache
+	jwkCachedSet jwk.Set
 }
 
 // CaddyModule implements caddy.Module interface.
@@ -162,17 +164,30 @@ func (ja *JWTAuth) usingJWK() bool {
 	return ja.SignKey == "" && ja.JWKURL != ""
 }
 
-func (ja *JWTAuth) setupJWKLoader() {
+func (ja *JWTAuth) setupJWKLoader() error {
 	cache := jwk.NewCache(context.Background(), jwk.WithErrSink(ja))
 	cache.Register(ja.JWKURL)
+	ja.jwkCache = cache
+	if err := ja.refreshJWKCache(); err != nil {
+		return err
+	}
 	ja.jwkCachedSet = jwk.NewCachedSet(cache, ja.JWKURL)
 	ja.logger.Info("using JWKs from URL", zap.String("url", ja.JWKURL), zap.Int("loaded_keys", ja.jwkCachedSet.Len()))
+	return nil
+}
+
+// refreshJWKCache refreshes the JWK cache. It validates the JWKs from the given URL.
+func (ja *JWTAuth) refreshJWKCache() error {
+	_, err := ja.jwkCache.Refresh(context.Background(), ja.JWKURL)
+	return err
 }
 
 // Validate implements caddy.Validator interface.
 func (ja *JWTAuth) Validate() error {
 	if ja.usingJWK() {
-		ja.setupJWKLoader()
+		if err := ja.setupJWKLoader(); err != nil {
+			return fmt.Errorf("failed to setup JWK loader: %w", err)
+		}
 	} else {
 		if keyBytes, asymmetric, err := parseSignKey(ja.SignKey); err != nil {
 			// Key(step 1): base64 -> raw bytes.
@@ -213,6 +228,9 @@ func (ja *JWTAuth) keyProvider() jws.KeyProviderFunc {
 			kid := sig.ProtectedHeaders().KeyID()
 			key, found := ja.jwkCachedSet.LookupKeyID(kid)
 			if !found {
+				// trigger a refresh if the key is not found
+				go ja.refreshJWKCache()
+
 				if kid == "" {
 					return fmt.Errorf("missing kid in JWT header")
 				}
