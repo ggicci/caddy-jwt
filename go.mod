@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/caddyserver/caddy/v2 v2.7.6
 	github.com/lestrrat-go/jwx/v2 v2.0.20
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	go.uber.org/zap v1.27.0
 )
 
