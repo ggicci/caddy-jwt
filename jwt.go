@@ -258,7 +258,6 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 	candidates = append(candidates, getTokensFromQuery(r, ja.FromQuery)...)
 	candidates = append(candidates, getTokensFromHeader(r, ja.FromHeader)...)
 	candidates = append(candidates, getTokensFromCookies(r, ja.FromCookies)...)
-
 	candidates = append(candidates, getTokensFromHeader(r, []string{"Authorization"})...)
 	checked := make(map[string]struct{})
 
@@ -353,8 +352,9 @@ func getTokensFromHeader(r *http.Request, names []string) []string {
 
 func getTokensFromQuery(r *http.Request, names []string) []string {
 	tokens := make([]string, 0)
+	query := r.URL.Query()
 	for _, key := range names {
-		token := r.FormValue(key)
+		token := query.Get(key)
 		if token != "" {
 			tokens = append(tokens, token)
 		}
