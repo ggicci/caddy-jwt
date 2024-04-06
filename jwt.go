@@ -168,16 +168,15 @@ func (ja *JWTAuth) setupJWKLoader() {
 	cache := jwk.NewCache(context.Background(), jwk.WithErrSink(ja))
 	cache.Register(ja.JWKURL)
 	ja.jwkCache = cache
-	// ignore any error loading the JWKS endpoint now as it may not be available at startup
-	_ = ja.refreshJWKCache()
+	ja.refreshJWKCache()
 	ja.jwkCachedSet = jwk.NewCachedSet(cache, ja.JWKURL)
 	ja.logger.Info("using JWKs from URL", zap.String("url", ja.JWKURL), zap.Int("loaded_keys", ja.jwkCachedSet.Len()))
 }
 
 // refreshJWKCache refreshes the JWK cache. It validates the JWKs from the given URL.
-func (ja *JWTAuth) refreshJWKCache() error {
+func (ja *JWTAuth) refreshJWKCache() {
 	_, err := ja.jwkCache.Refresh(context.Background(), ja.JWKURL)
-	return err
+	ja.logger.Warn("failed to refresh JWK cache", zap.Error(err))
 }
 
 // Validate implements caddy.Validator interface.
