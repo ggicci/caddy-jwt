@@ -231,7 +231,7 @@ func (ja *JWTAuth) keyProvider() jws.KeyProviderFunc {
 				}
 				return fmt.Errorf("key specified by kid %q not found in JWKs", kid)
 			}
-			sink.Key(ja.determineSigningAlgorithm(key.Algorithm()), key)
+			sink.Key(ja.determineSigningAlgorithm(key.Algorithm(), sig.ProtectedHeaders().Algorithm()), key)
 		} else {
 			sink.Key(ja.determineSigningAlgorithm(sig.ProtectedHeaders().Algorithm()), ja.parsedSignKey)
 		}
@@ -239,9 +239,11 @@ func (ja *JWTAuth) keyProvider() jws.KeyProviderFunc {
 	}
 }
 
-func (ja *JWTAuth) determineSigningAlgorithm(alg jwa.KeyAlgorithm) jwa.SignatureAlgorithm {
-	if alg.String() != "" {
-		return jwa.SignatureAlgorithm(alg.String())
+func (ja *JWTAuth) determineSigningAlgorithm(alg ...jwa.KeyAlgorithm) jwa.SignatureAlgorithm {
+	for _, a := range alg {
+		if a.String() != "" {
+			return jwa.SignatureAlgorithm(a.String())
+		}
 	}
 	return jwa.SignatureAlgorithm(ja.SignAlgorithm) // can be ""
 }
