@@ -3,6 +3,7 @@ package caddyjwt
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -232,6 +233,14 @@ func (ja *JWTAuth) keyProvider() jws.KeyProviderFunc {
 				return fmt.Errorf("key specified by kid %q not found in JWKs", kid)
 			}
 			sink.Key(ja.determineSigningAlgorithm(key.Algorithm(), sig.ProtectedHeaders().Algorithm()), key)
+		} else if ja.SignAlgorithm == string(jwa.EdDSA) {
+			if signKey, ok := ja.parsedSignKey.([]byte); !ok {
+				return fmt.Errorf("EdDSA key must be base64 encoded bytes")
+			} else if len(signKey) != ed25519.PublicKeySize {
+				return fmt.Errorf("key is not a proper ed25519 length")
+			} else {
+				sink.Key(jwa.EdDSA, ed25519.PublicKey(signKey))
+			}
 		} else {
 			sink.Key(ja.determineSigningAlgorithm(sig.ProtectedHeaders().Algorithm()), ja.parsedSignKey)
 		}
