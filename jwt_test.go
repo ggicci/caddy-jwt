@@ -1,6 +1,7 @@
 package caddyjwt
 
 import (
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -47,6 +48,10 @@ hwIDAQAB
 	jwkPubKey                jwk.Key // public key
 	jwkPubKeySet             jwk.Set // public key set
 	jwkPubKeySetInapplicable jwk.Set // public key set (inapplicable)
+
+	// EdDSA test
+	jwkKeyEd25519      jwk.Key // private key for EdDSA test
+	TestSignKeyEd25519 string  // base64 encoded public key
 )
 
 func init() {
@@ -60,6 +65,8 @@ func init() {
 	panicOnError(err)
 	anotherPubKeyII, err := generateJWK().PublicKey()
 	panicOnError(err)
+
+	jwkKeyEd25519 = generateEdDSAJWK()
 
 	jwkPubKeySet = jwk.NewSet()
 	jwkPubKeySet.AddKey(anotherPubKeyI)
@@ -80,6 +87,18 @@ func generateJWK() jwk.Key {
 	jwk.AssignKeyID(key)                       // set "kid"
 	key.Set(jwk.AlgorithmKey, jwa.RS256)       // set "alg"
 	key.Set(jwk.KeyUsageKey, jwk.ForSignature) // set "use"
+	return key
+}
+
+func generateEdDSAJWK() jwk.Key {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	panicOnError(err)
+	TestSignKeyEd25519 = base64.StdEncoding.EncodeToString(publicKey)
+	key, err := jwk.FromRaw(privateKey)
+	panicOnError(err)
+	jwk.AssignKeyID(key)
+	key.Set(jwk.AlgorithmKey, jwa.EdDSA)
+	key.Set(jwk.KeyUsageKey, jwk.ForSignature)
 	return key
 }
 
@@ -119,6 +138,16 @@ func buildToken(claims MapClaims) jwt.Token {
 func issueTokenString(claims MapClaims) string {
 	token := buildToken(claims)
 	tokenBytes, err := jwt.Sign(token, jwt.WithKey(jwa.HS256, RawTestSignKey))
+	panicOnError(err)
+
+	return string(tokenBytes)
+}
+
+// issueTokenString issues a token string with the given claims,
+// using EdDSA signing algorithm.
+func issueTokenStringEdDSA(claims MapClaims) string {
+	token := buildToken(claims)
+	tokenBytes, err := jwt.Sign(token, jwt.WithKey(jwa.EdDSA, jwkKeyEd25519))
 	panicOnError(err)
 
 	return string(tokenBytes)
@@ -180,6 +209,20 @@ func TestAuthenticate_FromAuthorizationHeader(t *testing.T) {
 	rw := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
 	r.Header.Add("Authorization", "Bearer "+issueTokenString(claims))
+	gotUser, authenticated, err := ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.True(t, authenticated)
+	assert.Equal(t, User{ID: "ggicci"}, gotUser)
+}
+
+func TestAuthenticate_EdDSA(t *testing.T) {
+	claims := MapClaims{"sub": "ggicci"}
+	ja := &JWTAuth{SignKey: TestSignKeyEd25519, SignAlgorithm: string(jwa.EdDSA), logger: testLogger}
+	assert.Nil(t, ja.Validate())
+
+	rw := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", "Bearer "+issueTokenStringEdDSA(claims))
 	gotUser, authenticated, err := ja.Authenticate(rw, r)
 	assert.Nil(t, err)
 	assert.True(t, authenticated)
