@@ -40,6 +40,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				if !h.AllArgs(&ja.JWKURL) {
 					return nil, h.Errf("invalid jwk_url: %q", ja.JWKURL)
 				}
+			case "skip_verification":
+				ja.SkipVerification = true
 			case "from_query":
 				ja.FromQuery = h.RemainingArgs()
 

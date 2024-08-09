@@ -52,7 +52,7 @@ type JWTAuth struct {
 	// If you'd like to use JWK, set this field and leave SignKey unset.
 	JWKURL string `json:"jwk_url"`
 
-	// SignAlgorithm is the the signing algorithm used. Available values are defined in
+	// SignAlgorithm is the signing algorithm used. Available values are defined in
 	// https://www.rfc-editor.org/rfc/rfc7518#section-3.1
 	// This is an optional field, which is used for determining the signing algorithm.
 	// We will try to determine the algorithm automatically from the following sources:
@@ -60,6 +60,19 @@ type JWTAuth struct {
 	// 2. The "alg" field in the matched JWK (if JWKURL is provided).
 	// 3. The value set here.
 	SignAlgorithm string `json:"sign_alg"`
+
+	// SkipVerification disables the verification of the JWT token signature.
+	//
+	// Use this option with caution, as it bypasses JWT signature verification.
+	// This can be useful if the token's signature has already been verified before
+	// reaching this proxy server or will be verified later, preventing redundant
+	// verifications and handling of the same token multiple times.
+	//
+	// This is particularly relevant if you want to use this plugin for routing
+	// based on the JWT payload, while avoiding unnecessary signature checks.
+	//
+	// This flag also disables usage and check of both JWKURL and SignAlgorithm options.
+	SkipVerification bool `json:"skip_verification"`
 
 	// FromQuery defines a list of names to get tokens from the query parameters
 	// of an HTTP request.
@@ -182,6 +195,26 @@ func (ja *JWTAuth) refreshJWKCache() {
 
 // Validate implements caddy.Validator interface.
 func (ja *JWTAuth) Validate() error {
+	if !ja.SkipVerification {
+		if err := ja.validateSignatureKeys(); err != nil {
+			return err
+		}
+	}
+
+	if len(ja.UserClaims) == 0 {
+		ja.UserClaims = []string{
+			"sub",
+		}
+	}
+	for claim, placeholder := range ja.MetaClaims {
+		if claim == "" || placeholder == "" {
+			return fmt.Errorf("invalid meta claim: %s -> %s", claim, placeholder)
+		}
+	}
+	return nil
+}
+
+func (ja *JWTAuth) validateSignatureKeys() error {
 	if ja.usingJWK() {
 		ja.setupJWKLoader()
 	} else {
@@ -205,16 +238,6 @@ func (ja *JWTAuth) Validate() error {
 		}
 	}
 
-	if len(ja.UserClaims) == 0 {
-		ja.UserClaims = []string{
-			"sub",
-		}
-	}
-	for claim, placeholder := range ja.MetaClaims {
-		if claim == "" || placeholder == "" {
-			return fmt.Errorf("invalid meta claim: %s -> %s", claim, placeholder)
-		}
-	}
 	return nil
 }
 
@@ -277,7 +300,14 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 			continue
 		}
 
-		gotToken, err = jwt.ParseString(tokenString, jwt.WithKeyProvider(ja.keyProvider()))
+		jwtOptions := []jwt.ParseOption{
+			jwt.WithVerify(!ja.SkipVerification),
+		}
+		if !ja.SkipVerification {
+			jwtOptions = append(jwtOptions, jwt.WithKeyProvider(ja.keyProvider()))
+		}
+		gotToken, err = jwt.ParseString(tokenString, jwtOptions...)
+
 		checked[tokenString] = struct{}{}
 
 		logger := ja.logger.With(zap.String("token_string", desensitizedTokenString(tokenString)))

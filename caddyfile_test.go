@@ -174,3 +174,38 @@ func TestParseMetaClaim(t *testing.T) {
 		}
 	}
 }
+
+func TestParsingCaddyfileWithSkipVerification(t *testing.T) {
+	helper := httpcaddyfile.Helper{
+		Dispenser: caddyfile.NewTestDispenser(`
+	jwtauth {
+		skip_verification
+		from_query access_token token _tok
+		from_header X-Api-Key
+		from_cookies user_session SESSID
+		issuer_whitelist https://api.example.com
+		audience_whitelist https://api.example.io https://learn.example.com
+		user_claims uid user_id login username
+		meta_claims "IsAdmin -> is_admin" "gender"
+	}
+	`),
+	}
+	expectedJA := &JWTAuth{
+		SkipVerification:  true,
+		FromQuery:         []string{"access_token", "token", "_tok"},
+		FromHeader:        []string{"X-Api-Key"},
+		FromCookies:       []string{"user_session", "SESSID"},
+		IssuerWhitelist:   []string{"https://api.example.com"},
+		AudienceWhitelist: []string{"https://api.example.io", "https://learn.example.com"},
+		UserClaims:        []string{"uid", "user_id", "login", "username"},
+		MetaClaims:        map[string]string{"IsAdmin": "is_admin", "gender": "gender"},
+	}
+
+	h, err := parseCaddyfile(helper)
+	assert.Nil(t, err)
+	auth, ok := h.(caddyauth.Authentication)
+	assert.True(t, ok)
+	jsonConfig, ok := auth.ProvidersRaw["jwt"]
+	assert.True(t, ok)
+	assert.Equal(t, caddyconfig.JSON(expectedJA, nil), jsonConfig)
+}

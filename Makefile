@@ -10,9 +10,6 @@ GOTEST=$(GO) test
 GOCOVER=$(GO) tool cover
 XCADDY=xcaddy
 
-example:
-	$(XCADDY) run -config=example/caddy.json
-
 debug:
 	XCADDY_DEBUG=1 $(XCADDY) build --with github.com/ggicci/caddy-jwt=$(shell pwd)
 
@@ -24,4 +21,4 @@ test/cover:
 test/report:
 	$(GOCOVER) -html=main.cover.out
 
-.PHONY: example debug test test/cover test/report
+.PHONY: debug test test/cover test/report

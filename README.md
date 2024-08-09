@@ -118,10 +118,12 @@ Module **caddy-jwt** behaves like a **"JWT Validator"**. The authentication flow
    │  3. cookies      │
    └────────┬─────────┘
             │
-    ┌───────▼────────┐
-    │   is valid?    │
-    │using `sign_key`├────NO───────┐
-    └───────┬────────┘             │
+    ┌───────▼───────────┐
+    │     is valid?     │
+    │  using `sign_key` │
+    │ or validation is  │
+    │     disabled      ├─NO───────┐
+    └───────┬───────────┘          │
             │YES                   │
 ┌───────────▼───────────┐          │
 │Populate {http.user.id}│          │
