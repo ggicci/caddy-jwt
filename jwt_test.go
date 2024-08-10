@@ -191,6 +191,17 @@ func TestValidate_usingJWK(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+// TestValidate_SkipVerification checks that validation does not fail when
+// SkipVerification is enabled and no keys are provided. This ensures that
+// enabling SkipVerification bypasses signature and keys validation without errors.
+func TestValidate_SkipVerification(t *testing.T) {
+	// skipping verification
+	ja := &JWTAuth{
+		SkipVerification: true,
+	}
+	assert.NoError(t, ja.Validate())
+}
+
 func TestValidate_InvalidMetaClaims(t *testing.T) {
 	ja := &JWTAuth{
 		SignKey: TestSignKey,
@@ -245,6 +256,87 @@ func TestAuthenticate_FromCustomHeader(t *testing.T) {
 	assert.Nil(t, err)
 	assert.True(t, authenticated)
 	assert.Equal(t, User{ID: "ggicci"}, gotUser)
+}
+
+func TestAuthenticate_FromQueryWithSkipVerification(t *testing.T) {
+	var (
+		claims = MapClaims{"sub": "ggicci"}
+		ja     = &JWTAuth{
+			FromQuery:        []string{"access_token", "token"},
+			SkipVerification: true,
+			logger:           testLogger,
+		}
+		tokenString = issueTokenString(claims)
+
+		err           error
+		rw            *httptest.ResponseRecorder
+		r             *http.Request
+		params        url.Values
+		gotUser       User
+		authenticated bool
+	)
+	assert.Nil(t, ja.Validate())
+
+	// trying "access_token" without signature key
+	rw = httptest.NewRecorder()
+	r, _ = http.NewRequest("GET", "/", nil)
+	params = make(url.Values)
+	params.Add("access_token", tokenString)
+	r.URL.RawQuery = params.Encode()
+	gotUser, authenticated, err = ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.True(t, authenticated)
+	assert.Equal(t, User{ID: "ggicci"}, gotUser)
+
+	// invalid "token" without signature key
+	rw = httptest.NewRecorder()
+	r, _ = http.NewRequest("GET", "/", nil)
+	params = make(url.Values)
+	params.Add("access_token", tokenString+"INVALID")
+	params.Add("token", tokenString)
+	r.URL.RawQuery = params.Encode()
+	gotUser, authenticated, err = ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.True(t, authenticated)
+	assert.Equal(t, User{ID: "ggicci"}, gotUser)
+}
+
+func TestAuthenticate_PopulateUserMetadataWithSkipVerification(t *testing.T) {
+	ja := &JWTAuth{
+		SkipVerification: true,
+		MetaClaims: map[string]string{
+			"jti":                            "jti",
+			"IsAdmin":                        "is_admin",
+			"settings.role":                  "role",
+			"settings.payout.paypal.enabled": "is_paypal_enabled",
+		},
+		logger: testLogger,
+	}
+	assert.Nil(t, ja.Validate())
+
+	claimsWithMetadata := MapClaims{
+		"jti":     "a976475a-186a-4c1f-b182-95b3f886e2b4",
+		"sub":     "ggicci",
+		"IsAdmin": true,
+		"settings": map[string]interface{}{
+			"role": "admin",
+			"payout": map[string]interface{}{
+				"paypal": map[string]interface{}{
+					"enabled": true,
+				},
+			},
+		},
+	}
+	rw := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", issueTokenString(claimsWithMetadata))
+	gotUser, authenticated, err := ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.True(t, authenticated)
+	assert.Equal(t, "a976475a-186a-4c1f-b182-95b3f886e2b4", gotUser.Metadata["jti"])
+	assert.Equal(t, "true", gotUser.Metadata["is_admin"])
+	assert.Equal(t, "admin", gotUser.Metadata["role"])
+	assert.Equal(t, "true", gotUser.Metadata["is_paypal_enabled"])
 }
 
 func TestAuthenticate_FromQuery(t *testing.T) {
