@@ -72,6 +72,8 @@ hwIDAQAB
 
 5. The priority of `from_xxx` is `from_query > from_header > from_cookies`.
 
+6. Bypass the verification by turning on `skip_verification` option, #85.
+
 ## Test it by yourself
 
 ```bash
