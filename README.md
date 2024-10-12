@@ -10,10 +10,11 @@ This module fulfilled [`http.handlers.authentication`](https://caddyserver.com/d
 
 ## Install
 
-Build this module with `caddy` at Caddy's official [download](https://caddyserver.com/download) site. Or:
+Build this module with `caddy` at Caddy's official [download](https://caddyserver.com/download) site. Or build it with [xcaddy](https://github.com/caddyserver/xcaddy) locally by yourself:
 
 ```bash
-xcaddy --with github.com/ggicci/caddy-jwt
+# A caddy binary will be produced in your current directory.
+xcaddy build --with github.com/ggicci/caddy-jwt
 ```
 
 ## Sample Caddyfile
@@ -74,22 +75,42 @@ hwIDAQAB
 
 6. Bypass the verification by turning on `skip_verification` option, [#85](/../../issues/85).
 
-## Test it by yourself
+## How to do integration test of caddy-jwt locally?
+
+For **caddy-jwt users**, we assume you've already got a custom caddy binary built with our caddy-jwt plugin. Then you can run the test:
 
 ```bash
-git clone https://github.com/ggicci/caddy-jwt.git
-cd caddy-jwt
+echo '{
+        order jwtauth before basicauth
+}
 
-# Build a caddy with this module and run an example server at localhost.
-make example
+:8080 {
+        jwtauth {
+                sign_key TkZMNSowQmMjOVU2RUB0bm1DJkU3U1VONkd3SGZMbVk=
+                sign_alg HS256
+                from_query access_token token
+                from_header X-Api-Token
+                from_cookies user_session
+                user_claims aud uid user_id username login
+        }
 
+        respond "User authenticated with ID: {http.auth.user.id}"
+}' > /tmp/caddy-jwt-test.Caddyfile
+
+# ./caddy is your custom caddy built, see Install section above
+./caddy run --config /tmp/caddy-jwt-test.Caddyfile
+
+# This token won't expire until year 2285.
 TEST_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjk5NTU4OTI2NzAsImp0aSI6IjgyMjk0YTYzLTk2NjAtNGM2Mi1hOGE4LTVhNjI2NWVmY2Q0ZSIsInN1YiI6IjM0MDYzMjc5NjM1MTY5MzIiLCJpc3MiOiJodHRwczovL2FwaS5leGFtcGxlLmNvbSIsImF1ZCI6WyJodHRwczovL2FwaS5leGFtcGxlLmlvIl0sInVzZXJuYW1lIjoiZ2dpY2NpIn0.O8kvRO9y6xQO3AymqdFE7DDqLRBQhkntf78O9kF71F8
 
 curl -v "http://localhost:8080?access_token=${TEST_TOKEN}"
-# You should see authenticated output:
+# You should see
+# 1. caddy log:
+#   http.authentication.providers.jwt       user authenticated      {"token_string": "eyJhbGciOiJIUzI1…Qhkntf78O9kF71F8", "user_claim": "username", "id": "ggicci"}
 #
-# User Authenticated with ID: 3406327963516932
-#
+# 2. request response (curl command output):
+# User Authenticated with ID: ggicci
+
 # And the following command should also work:
 curl -v -H"X-Api-Token: ${TEST_TOKEN}" "http://localhost:8080"
 curl -v -H"Authorization: Bearer ${TEST_TOKEN}" "http://localhost:8080"
@@ -108,7 +129,19 @@ curl -v -H"Authorization: Bearer ${TEST_TOKEN}" "http://localhost:8080"
 }
 ```
 
-## How it works?
+For **caddy-jwt developers**, you need to clone this repo, and start the caddy server in the repo folder:
+
+```bash
+git clone https://github.com/ggicci/caddy-jwt.git
+cd caddy-jwt
+
+# Build a caddy with this module and run an example server at localhost.
+xcaddy run --config /tmp/caddy-jwt-test.Caddyfile
+```
+
+Any local code changes should reflect immediately.
+
+## How caddy-jwt works?
 
 Module **caddy-jwt** behaves like a **"JWT Validator"**. The authentication flow is:
 
