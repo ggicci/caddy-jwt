@@ -513,6 +513,9 @@ func desensitizedTokenString(token string) string {
 
 // parseSignKey parses the given key and returns the key bytes.
 func parseSignKey(signKey string) (keyBytes []byte, asymmetric bool, err error) {
+	repl := caddy.NewReplacer()
+	// Replace placeholders in the signKey such as {file./path/to/sign_key.txt}
+	signKey = repl.ReplaceAll(signKey, "")
 	if len(signKey) == 0 {
 		return nil, false, ErrMissingKeys
 	}
