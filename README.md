@@ -75,6 +75,8 @@ hwIDAQAB
 
 6. Bypass the verification by turning on `skip_verification` option, [#85](/../../issues/85).
 
+7. Instead of specifying the `sign_key` directly as a value, you can use a feature introduced in Caddy v2.8.0 to load it from a file using `sign_key {file./path/to/sign_key.txt}`.
+
 ## How to do integration test of caddy-jwt locally?
 
 For **caddy-jwt users**, we assume you've already got a custom caddy binary built with our caddy-jwt plugin. Then you can run the test:
