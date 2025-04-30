@@ -150,8 +150,11 @@ type JWTAuth struct {
 	logger        *zap.Logger
 	parsedSignKey interface{} // can be []byte, *rsa.PublicKey, *ecdsa.PublicKey, etc.
 
-	jwkCache     *jwk.Cache
-	jwkCachedSet jwk.Set
+	// JWK cache by resolved URL to support placeholders in JWKURL
+	jwkCaches map[string]*struct {
+		cache     *jwk.Cache
+		cachedSet jwk.Set
+	}
 }
 
 // CaddyModule implements caddy.Module interface.
@@ -179,18 +182,72 @@ func (ja *JWTAuth) usingJWK() bool {
 }
 
 func (ja *JWTAuth) setupJWKLoader() {
-	cache := jwk.NewCache(context.Background(), jwk.WithErrSink(ja))
-	cache.Register(ja.JWKURL)
-	ja.jwkCache = cache
-	ja.refreshJWKCache()
-	ja.jwkCachedSet = jwk.NewCachedSet(cache, ja.JWKURL)
-	ja.logger.Info("using JWKs from URL", zap.String("url", ja.JWKURL), zap.Int("loaded_keys", ja.jwkCachedSet.Len()))
+	// Initialiser le cache pour toutes les URL possibles
+	ja.jwkCaches = make(map[string]*struct {
+		cache     *jwk.Cache
+		cachedSet jwk.Set
+	})
+	ja.logger.Info("JWK cache initialized for placeholder URL", zap.String("placeholder_url", ja.JWKURL))
 }
 
-// refreshJWKCache refreshes the JWK cache. It validates the JWKs from the given URL.
-func (ja *JWTAuth) refreshJWKCache() {
-	_, err := ja.jwkCache.Refresh(context.Background(), ja.JWKURL)
-	ja.logger.Warn("failed to refresh JWK cache", zap.Error(err))
+// getOrCreateJWKCache retrieves or creates a cache for a specific JWK URL
+func (ja *JWTAuth) getOrCreateJWKCache(resolvedURL string) (*struct {
+	cache     *jwk.Cache
+	cachedSet jwk.Set
+}, error) {
+	// If the URL is empty, return an error
+	if resolvedURL == "" {
+		return nil, fmt.Errorf("resolved JWK URL is empty")
+	}
+
+	// Check if cache already exists for this URL
+	if entry, ok := ja.jwkCaches[resolvedURL]; ok {
+		return entry, nil
+	}
+
+	// Create a new cache for this URL
+	cache := jwk.NewCache(context.Background(), jwk.WithErrSink(ja))
+	err := cache.Register(resolvedURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to register JWK URL: %w", err)
+	}
+
+	// Try to refresh the cache immediately
+	_, err = cache.Refresh(context.Background(), resolvedURL)
+	if err != nil {
+		ja.logger.Warn("failed to refresh JWK cache during initialization", zap.Error(err), zap.String("url", resolvedURL))
+		// Continue even in case of error, the important thing is that the URL is registered
+	}
+
+	cachedSet := jwk.NewCachedSet(cache, resolvedURL)
+	entry := &struct {
+		cache     *jwk.Cache
+		cachedSet jwk.Set
+	}{
+		cache:     cache,
+		cachedSet: cachedSet,
+	}
+
+	// Register the entry in the cache
+	ja.jwkCaches[resolvedURL] = entry
+	ja.logger.Info("new JWK cache created", zap.String("url", resolvedURL), zap.Int("loaded_keys", cachedSet.Len()))
+
+	return entry, nil
+}
+
+// refreshJWKCache refreshes the JWK cache for a specific URL. It validates the JWKs from the given URL.
+func (ja *JWTAuth) refreshJWKCache(resolvedURL string) error {
+	entry, err := ja.getOrCreateJWKCache(resolvedURL)
+	if err != nil {
+		return err
+	}
+
+	_, err = entry.cache.Refresh(context.Background(), resolvedURL)
+	if err != nil {
+		ja.logger.Warn("failed to refresh JWK cache", zap.Error(err), zap.String("url", resolvedURL))
+		return err
+	}
+	return nil
 }
 
 // Validate implements caddy.Validator interface.
@@ -216,6 +273,8 @@ func (ja *JWTAuth) Validate() error {
 
 func (ja *JWTAuth) validateSignatureKeys() error {
 	if ja.usingJWK() {
+		// Initialize the cache structure without attempting to resolve placeholders
+		// URLs will be resolved during usage
 		ja.setupJWKLoader()
 	} else {
 		if keyBytes, asymmetric, err := parseSignKey(ja.SignKey); err != nil {
@@ -241,19 +300,33 @@ func (ja *JWTAuth) validateSignatureKeys() error {
 	return nil
 }
 
-func (ja *JWTAuth) keyProvider() jws.KeyProviderFunc {
-	return func(_ context.Context, sink jws.KeySink, sig *jws.Signature, _ *jws.Message) error {
+func (ja *JWTAuth) keyProvider(request *http.Request) jws.KeyProviderFunc {
+	return func(context context.Context, sink jws.KeySink, sig *jws.Signature, _ *jws.Message) error {
 		if ja.usingJWK() {
+			// Resolve JWKURL with placeholders
+			replacer := request.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+			resolvedURL := replacer.ReplaceAll(ja.JWKURL, "")
+
+			ja.logger.Info("JWK unresolved", zap.String("placeholder_url", ja.JWKURL))
+			ja.logger.Info("JWK resolved", zap.String("placeholder_url", resolvedURL))
+
+			// Get or create the cache for this URL
+			cacheEntry, err := ja.getOrCreateJWKCache(resolvedURL)
+			if err != nil {
+				return fmt.Errorf("failed to get JWK cache: %w", err)
+			}
+
+			// Use the key set associated with this URL
 			kid := sig.ProtectedHeaders().KeyID()
-			key, found := ja.jwkCachedSet.LookupKeyID(kid)
+			key, found := cacheEntry.cachedSet.LookupKeyID(kid)
 			if !found {
-				// trigger a refresh if the key is not found
-				go ja.refreshJWKCache()
+				// Trigger an asynchronous refresh if the key is not found
+				go ja.refreshJWKCache(resolvedURL)
 
 				if kid == "" {
 					return fmt.Errorf("missing kid in JWT header")
 				}
-				return fmt.Errorf("key specified by kid %q not found in JWKs", kid)
+				return fmt.Errorf("key specified by kid %q not found in JWKs from %s", kid, resolvedURL)
 			}
 			sink.Key(ja.determineSigningAlgorithm(key.Algorithm(), sig.ProtectedHeaders().Algorithm()), key)
 		} else if ja.SignAlgorithm == string(jwa.EdDSA) {
@@ -304,7 +377,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 			jwt.WithVerify(!ja.SkipVerification),
 		}
 		if !ja.SkipVerification {
-			jwtOptions = append(jwtOptions, jwt.WithKeyProvider(ja.keyProvider()))
+			jwtOptions = append(jwtOptions, jwt.WithKeyProvider(ja.keyProvider(r)))
 		}
 		gotToken, err = jwt.ParseString(tokenString, jwtOptions...)
 
@@ -515,15 +588,15 @@ func desensitizedTokenString(token string) string {
 func parseSignKey(signKey string) (keyBytes []byte, asymmetric bool, err error) {
 	repl := caddy.NewReplacer()
 	// Replace placeholders in the signKey such as {file./path/to/sign_key.txt}
-	signKey = repl.ReplaceAll(signKey, "")
-	if len(signKey) == 0 {
+	resolvedSignKey := repl.ReplaceAll(signKey, "")
+	if len(resolvedSignKey) == 0 {
 		return nil, false, ErrMissingKeys
 	}
-	if strings.Contains(signKey, "-----BEGIN PUBLIC KEY-----") {
-		keyBytes, err = parsePEMFormattedPublicKey(signKey)
+	if strings.Contains(resolvedSignKey, "-----BEGIN PUBLIC KEY-----") {
+		keyBytes, err = parsePEMFormattedPublicKey(resolvedSignKey)
 		return keyBytes, true, err
 	}
-	keyBytes, err = base64.StdEncoding.DecodeString(signKey)
+	keyBytes, err = base64.StdEncoding.DecodeString(resolvedSignKey)
 	return keyBytes, false, err
 }
 
