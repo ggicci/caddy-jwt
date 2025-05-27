@@ -806,7 +806,7 @@ func TestJWK(t *testing.T) {
 	cachedEntry, exists := ja.jwkCaches[TestJWKURL]
 	assert.True(t, exists, "Le cache devrait exister pour l'URL de test")
 	assert.NotNil(t, cachedEntry)
-	assert.Equal(t, 1, cachedEntry.cachedSet.Len())
+	assert.Equal(t, 1, cachedEntry.CachedSet.Len())
 }
 
 func TestJWKSet(t *testing.T) {
@@ -834,7 +834,7 @@ func TestJWKSet(t *testing.T) {
 	cachedEntry, exists := ja.jwkCaches[TestJWKSetURL]
 	assert.True(t, exists, "Le cache devrait exister pour l'URL du set JWK")
 	assert.NotNil(t, cachedEntry)
-	assert.Equal(t, 2, cachedEntry.cachedSet.Len())
+	assert.Equal(t, 2, cachedEntry.CachedSet.Len())
 }
 
 func TestJWKSet_KeyNotFound(t *testing.T) {
@@ -859,7 +859,7 @@ func TestJWKSet_KeyNotFound(t *testing.T) {
 	cachedEntry, exists := ja.jwkCaches[TestJWKSetURLInapplicable]
 	assert.True(t, exists, "Le cache devrait exister pour l'URL inapplicable")
 	assert.NotNil(t, cachedEntry)
-	assert.Equal(t, 2, cachedEntry.cachedSet.Len())
+	assert.Equal(t, 2, cachedEntry.CachedSet.Len())
 
 	// Vérifier que l'authentification a échoué car la clé n'est pas trouvée
 	assert.Error(t, err)
