@@ -194,6 +194,10 @@ It should be handled separately by Caddy. Please read [#24](https://github.com/g
 
 Using multi-line content in a directive [should be quoted](https://caddyserver.com/docs/caddyfile/concepts#tokens-and-quotes) as Caddy's documentation says. And the public key should be represented in PKCS#1 PEM format. Here's a simple command to derive such a public key from an RSA private key: `openssl rsa -in input.rsa -pubout`. Related: [#36](https://github.com/ggicci/caddy-jwt/issues/36).
 
+## Related Projects
+
+* https://github.com/steffenbusch/caddy-jwt-issuer: A Caddy plugin that issues JWT after username + password authentication
+
 ## References
 
 - **MUST READ**: [JWT Security Best Practices](https://curity.io/resources/learn/jwt-best-practices/)
