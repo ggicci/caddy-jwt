@@ -17,6 +17,14 @@ Build this module with `caddy` at Caddy's official [download](https://caddyserve
 xcaddy build --with github.com/ggicci/caddy-jwt
 ```
 
+**Requirements for a local build**:
+
+| caddy-jwt Version | Go version | Caddy Version |
+| ----------------- | ---------- | ------------- |
+| v1.1.1            | >=1.25.0   | >=2.10.1      |
+| v1.1.0            | >=1.20.0   | >=2.8.0       |
+
+
 ## Sample Caddyfile
 
 ```Caddyfile
