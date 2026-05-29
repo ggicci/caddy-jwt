@@ -224,6 +224,7 @@ func TestAuthenticate_ClockSkew_Exp(t *testing.T) {
 		SignKey:   TestSignKey,
 		logger:    testLogger,
 		ClockSkew: 10, // allow 10 seconds of clock skew
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 
@@ -244,6 +245,7 @@ func TestAuthenticate_ClockSkew_Iat(t *testing.T) {
 		SignKey:   TestSignKey,
 		logger:    testLogger,
 		ClockSkew: 10, // allow 10 seconds of clock skew
+		FromHeader: []string{"Authorization"}
 	}
 	assert.Nil(t, ja.Validate())
 
@@ -298,7 +300,11 @@ func TestDetermineSigningAlgorithmFallback(t *testing.T) {
 
 func TestAuthenticate_FromAuthorizationHeader(t *testing.T) {
 	claims := MapClaims{"sub": "ggicci"}
-	ja := &JWTAuth{SignKey: TestSignKey, logger: testLogger}
+	ja := &JWTAuth{
+		SignKey: TestSignKey,
+		logger: testLogger,
+		FromHeader: []string{"Authorization"}
+	}
 	assert.Nil(t, ja.Validate())
 
 	rw := httptest.NewRecorder()
@@ -312,7 +318,12 @@ func TestAuthenticate_FromAuthorizationHeader(t *testing.T) {
 
 func TestAuthenticate_EdDSA(t *testing.T) {
 	claims := MapClaims{"sub": "ggicci"}
-	ja := &JWTAuth{SignKey: TestSignKeyEd25519, SignAlgorithm: jwa.EdDSA().String(), logger: testLogger}
+	ja := &JWTAuth{
+		SignKey: TestSignKeyEd25519,
+		SignAlgorithm: jwa.EdDSA().String(),
+		logger: testLogger,
+		FromHeader: []string{"Authorization"}
+	}
 	assert.Nil(t, ja.Validate())
 
 	rw := httptest.NewRecorder()
@@ -395,6 +406,7 @@ func TestAuthenticate_PopulateUserMetadataWithSkipVerification(t *testing.T) {
 			"settings.payout.paypal.enabled": "is_paypal_enabled",
 		},
 		logger: testLogger,
+		FromHeader: []string{"Authorization"}
 	}
 	assert.Nil(t, ja.Validate())
 
@@ -525,6 +537,7 @@ func TestAuthenticate_CustomUserClaims(t *testing.T) {
 		SignKey:    TestSignKey,
 		UserClaims: []string{"username"},
 		logger:     testLogger,
+		FromHeader: []string{"Authorization"}
 	}
 	assert.Nil(t, ja.Validate())
 	rw := httptest.NewRecorder()
@@ -541,6 +554,7 @@ func TestAuthenticate_CustomUserClaims(t *testing.T) {
 		SignKey:    TestSignKey,
 		UserClaims: []string{"username"},
 		logger:     testLogger,
+		FromHeader: []string{"Authorization"}
 	}
 	assert.Nil(t, ja.Validate())
 	rw = httptest.NewRecorder()
@@ -557,6 +571,7 @@ func TestAuthenticate_CustomUserClaims(t *testing.T) {
 		SignKey:    TestSignKey,
 		UserClaims: []string{"uid", "user_id"},
 		logger:     testLogger,
+		FromHeader: []string{"Authorization"}
 	}
 	assert.Nil(t, ja.Validate())
 	rw = httptest.NewRecorder()
@@ -573,6 +588,7 @@ func TestAuthenticate_CustomUserClaims(t *testing.T) {
 		SignKey:    TestSignKey,
 		UserClaims: []string{"user_id", "uid"},
 		logger:     testLogger,
+		FromHeader: []string{"Authorization"}
 	}
 	assert.Nil(t, ja.Validate())
 	rw = httptest.NewRecorder()
@@ -588,6 +604,7 @@ func TestAuthenticate_ValidateStandardClaims(t *testing.T) {
 	ja := &JWTAuth{
 		SignKey: TestSignKey,
 		logger:  testLogger,
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 
@@ -626,8 +643,8 @@ func TestAuthenticate_VerifyIssuerWhitelist(t *testing.T) {
 	ja := &JWTAuth{
 		SignKey: TestSignKey,
 		logger:  testLogger,
-
 		IssuerWhitelist: []string{"https://api.example.com", "https://api.github.com"},
+		FromHeader: []string{"Authorization"}
 	}
 	assert.Nil(t, ja.Validate())
 
@@ -882,7 +899,11 @@ func TestJWK(t *testing.T) {
 
 func TestJWKSet(t *testing.T) {
 	time.Sleep(3 * time.Second)
-	ja := &JWTAuth{JWKURL: TestJWKSetURL, logger: testLogger}
+	ja := &JWTAuth{
+		JWKURL: TestJWKSetURL, 
+		logger: testLogger,
+		FromHeader: []string{"Authorization"}
+	}
 	assert.Nil(t, ja.Validate())
 
 	// Authentifier pour créer le cache
