@@ -332,8 +332,8 @@ func parseLogLevel(logLevel string) (zapcore.Level, error) {
 		return zapcore.InfoLevel, nil
 	}
 
-	var level zapcore.Level
-	if err := level.UnmarshalText([]byte(logLevel)); err != nil {
+	level, err := zapcore.ParseLevel(logLevel)
+	if err != nil {
 		return zapcore.InfoLevel, fmt.Errorf("invalid log_level: %q, must be one of: debug, info, warn, error", logLevel)
 	}
 	switch level {
@@ -523,27 +523,11 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 			ID:       gotUserID,
 			Metadata: getUserMetadata(gotToken, ja.MetaClaims),
 		}
-		logAtLevel(logger, ja.logLevel, "user authenticated", zap.String("user_claim", claimName), zap.String("id", gotUserID))
+		logger.Log(ja.logLevel, "user authenticated", zap.String("user_claim", claimName), zap.String("id", gotUserID))
 		return user, true, nil
 	}
 
 	return User{}, false, err
-}
-
-// logAtLevel emits msg through logger at the given level. It defaults to
-// Info for the zero value of zapcore.Level, so it behaves correctly even
-// when called before Validate() has run (e.g. in tests).
-func logAtLevel(logger *zap.Logger, level zapcore.Level, msg string, fields ...zap.Field) {
-	switch level {
-	case zapcore.DebugLevel:
-		logger.Debug(msg, fields...)
-	case zapcore.WarnLevel:
-		logger.Warn(msg, fields...)
-	case zapcore.ErrorLevel:
-		logger.Error(msg, fields...)
-	default:
-		logger.Info(msg, fields...)
-	}
 }
 
 func normToken(token string) string {
