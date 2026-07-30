@@ -20,6 +20,8 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type MapClaims map[string]interface{}
@@ -214,6 +216,37 @@ func TestValidate_SkipVerification(t *testing.T) {
 		SkipVerification: true,
 	}
 	assert.NoError(t, ja.Validate())
+}
+
+func TestValidate_LogLevel(t *testing.T) {
+	// unset log_level defaults to info
+	ja := &JWTAuth{SignKey: TestSignKey}
+	assert.Nil(t, ja.Validate())
+	assert.Equal(t, zapcore.InfoLevel, ja.logLevel)
+
+	// valid log_level values
+	for levelStr, level := range map[string]zapcore.Level{
+		"debug": zapcore.DebugLevel,
+		"info":  zapcore.InfoLevel,
+		"warn":  zapcore.WarnLevel,
+		"error": zapcore.ErrorLevel,
+		"DEBUG": zapcore.DebugLevel,
+	} {
+		ja = &JWTAuth{SignKey: TestSignKey, LogLevel: levelStr}
+		assert.Nil(t, ja.Validate(), "log_level=%s", levelStr)
+		assert.Equal(t, level, ja.logLevel, "log_level=%s", levelStr)
+	}
+
+	// invalid log_level: not a recognized zap level
+	ja = &JWTAuth{SignKey: TestSignKey, LogLevel: "verbose"}
+	assert.Contains(t, ja.Validate().Error(), "log_level")
+
+	// invalid log_level: disallowed zap level, would crash/exit the process
+	// on every successfully authenticated request
+	for _, levelStr := range []string{"dpanic", "panic", "fatal"} {
+		ja = &JWTAuth{SignKey: TestSignKey, LogLevel: levelStr}
+		assert.Contains(t, ja.Validate().Error(), "log_level", "log_level=%s", levelStr)
+	}
 }
 
 func TestAuthenticate_ClockSkew_Exp(t *testing.T) {
@@ -784,6 +817,39 @@ func TestAuthenticate_PopulateUserMetadata(t *testing.T) {
 	assert.Equal(t, "admin", gotUser.Metadata["role"])
 	assert.Equal(t, "true", gotUser.Metadata["is_paypal_enabled"])
 	assert.Equal(t, "", gotUser.Metadata["is_alipay_enabled"])
+}
+
+// TestAuthenticate_LogLevel checks that the "user authenticated" log line is
+// emitted at the level configured via LogLevel, instead of always at Info.
+func TestAuthenticate_LogLevel(t *testing.T) {
+	for levelStr, expectedLevel := range map[string]zapcore.Level{
+		"":      zapcore.InfoLevel, // default, when unset
+		"debug": zapcore.DebugLevel,
+		"info":  zapcore.InfoLevel,
+		"warn":  zapcore.WarnLevel,
+		"error": zapcore.ErrorLevel,
+	} {
+		core, recorded := observer.New(zapcore.DebugLevel)
+		ja := &JWTAuth{
+			SignKey:  TestSignKey,
+			LogLevel: levelStr,
+			logger:   zap.New(core),
+		}
+		assert.Nil(t, ja.Validate(), "log_level=%q", levelStr)
+
+		claims := MapClaims{"sub": "ggicci"}
+		rw := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "/", nil)
+		r.Header.Add("Authorization", "Bearer "+issueTokenString(claims))
+		gotUser, authenticated, err := ja.Authenticate(rw, r)
+		assert.Nil(t, err)
+		assert.True(t, authenticated)
+		assert.Equal(t, User{ID: "ggicci"}, gotUser)
+
+		entries := recorded.FilterMessage("user authenticated").All()
+		assert.Len(t, entries, 1, "log_level=%q", levelStr)
+		assert.Equal(t, expectedLevel, entries[0].Level, "log_level=%q", levelStr)
+	}
 }
 
 type ThingNotStringer struct{}

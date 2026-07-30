@@ -272,3 +272,67 @@ func TestParsingCaddyFileErrorClockSkew(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "clock_skew")
 }
+
+func TestParsingCaddyFileLogLevel(t *testing.T) {
+	helper := httpcaddyfile.Helper{
+		Dispenser: caddyfile.NewTestDispenser(`
+	jwtauth {
+		sign_key "TkZMNSowQmMjOVU2RUB0bm1DJkU3U1VONkd3SGZMbVk="
+		log_level debug
+	}
+	`),
+	}
+	expectedJA := &JWTAuth{
+		SignKey:  TestSignKey,
+		LogLevel: "debug",
+	}
+
+	h, err := parseCaddyfile(helper)
+	assert.Nil(t, err)
+	auth, ok := h.(caddyauth.Authentication)
+	assert.True(t, ok)
+	jsonConfig, ok := auth.ProvidersRaw["jwt"]
+	assert.True(t, ok)
+	assert.Equal(t, caddyconfig.JSON(expectedJA, nil), jsonConfig)
+}
+
+func TestParsingCaddyFileErrorLogLevel(t *testing.T) {
+	// invalid log_level: missing
+	helper := httpcaddyfile.Helper{
+		Dispenser: caddyfile.NewTestDispenser(`
+	jwtauth {
+		log_level
+	}
+	`),
+	}
+
+	_, err := parseCaddyfile(helper)
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "log_level")
+
+	// invalid log_level: not a recognized zap level
+	helper = httpcaddyfile.Helper{
+		Dispenser: caddyfile.NewTestDispenser(`
+	jwtauth {
+		log_level verbose
+	}
+	`),
+	}
+
+	_, err = parseCaddyfile(helper)
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "log_level")
+
+	// invalid log_level: disallowed zap level (would crash the process)
+	helper = httpcaddyfile.Helper{
+		Dispenser: caddyfile.NewTestDispenser(`
+	jwtauth {
+		log_level fatal
+	}
+	`),
+	}
+
+	_, err = parseCaddyfile(helper)
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "log_level")
+}

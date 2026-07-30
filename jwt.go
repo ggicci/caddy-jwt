@@ -24,6 +24,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func init() {
@@ -175,7 +176,22 @@ type JWTAuth struct {
 	// Use dot notation to access nested claims.
 	MetaClaims map[string]string `json:"meta_claims"`
 
+	// LogLevel controls the log level used for the "user authenticated" log
+	// line emitted for every successfully authenticated request.
+	//
+	// Available values (case-insensitive): "debug", "info", "warn", "error".
+	//
+	// The default value is "info".
+	//
+	// This is useful in production, where a service typically wants to emit a
+	// single log line per request (e.g. from an access log or reverse proxy),
+	// instead of one line per request from every middleware in the chain.
+	// Lowering this to "debug" avoids a duplicate per-request log line while
+	// keeping the message available when debug logging is enabled.
+	LogLevel string `json:"log_level,omitempty"`
+
 	logger        *zap.Logger
+	logLevel      zapcore.Level
 	parsedSignKey interface{} // can be []byte, *rsa.PublicKey, *ecdsa.PublicKey, etc.
 
 	// JWK cache by resolved URL to support placeholders in JWKURL
@@ -298,7 +314,34 @@ func (ja *JWTAuth) Validate() error {
 			return fmt.Errorf("invalid meta claim: %s -> %s", claim, placeholder)
 		}
 	}
+
+	level, err := parseLogLevel(ja.LogLevel)
+	if err != nil {
+		return err
+	}
+	ja.logLevel = level
+
 	return nil
+}
+
+// parseLogLevel parses the given log_level string into a zapcore.Level.
+// An empty string defaults to zapcore.InfoLevel, preserving the historical
+// (fixed) log level of the "user authenticated" message.
+func parseLogLevel(logLevel string) (zapcore.Level, error) {
+	if logLevel == "" {
+		return zapcore.InfoLevel, nil
+	}
+
+	var level zapcore.Level
+	if err := level.UnmarshalText([]byte(logLevel)); err != nil {
+		return zapcore.InfoLevel, fmt.Errorf("invalid log_level: %q, must be one of: debug, info, warn, error", logLevel)
+	}
+	switch level {
+	case zapcore.DebugLevel, zapcore.InfoLevel, zapcore.WarnLevel, zapcore.ErrorLevel:
+		return level, nil
+	default:
+		return zapcore.InfoLevel, fmt.Errorf("invalid log_level: %q, must be one of: debug, info, warn, error", logLevel)
+	}
 }
 
 func (ja *JWTAuth) validateSignatureKeys() error {
@@ -480,11 +523,27 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 			ID:       gotUserID,
 			Metadata: getUserMetadata(gotToken, ja.MetaClaims),
 		}
-		logger.Info("user authenticated", zap.String("user_claim", claimName), zap.String("id", gotUserID))
+		logAtLevel(logger, ja.logLevel, "user authenticated", zap.String("user_claim", claimName), zap.String("id", gotUserID))
 		return user, true, nil
 	}
 
 	return User{}, false, err
+}
+
+// logAtLevel emits msg through logger at the given level. It defaults to
+// Info for the zero value of zapcore.Level, so it behaves correctly even
+// when called before Validate() has run (e.g. in tests).
+func logAtLevel(logger *zap.Logger, level zapcore.Level, msg string, fields ...zap.Field) {
+	switch level {
+	case zapcore.DebugLevel:
+		logger.Debug(msg, fields...)
+	case zapcore.WarnLevel:
+		logger.Warn(msg, fields...)
+	case zapcore.ErrorLevel:
+		logger.Error(msg, fields...)
+	default:
+		logger.Info(msg, fields...)
+	}
 }
 
 func normToken(token string) string {

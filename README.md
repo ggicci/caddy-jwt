@@ -44,6 +44,7 @@ api.example.com {
 		audience_whitelist https://api.example.io https://learn.example.com
 		user_claims aud uid user_id username login
 		meta_claims "IsAdmin->is_admin" "settings.payout.paypal.enabled->is_paypal_enabled"
+		log_level debug
 	}
 	reverse_proxy http://172.16.0.14:8080
 }
@@ -63,7 +64,6 @@ TkZMNSowQmMjOVU2RUB0bm1DJkU3U1VONkd3SGZMbVk=
 -----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArzekF0pqttKNJMOiZeyt
 RdYiabdyy/sdGQYWYJPGD2Q+QDU9ZqprDmKgFOTxUy/VUBnaYr7hOEMBe7I6dyaS
-5G0EGr8UXAwgD5Uvhmz6gqvKTV+FyQfw0bupbcM4CdMD7wQ9uOxDdMYm7g7gdGd6
 SSIVvmsGDibBI9S7nKlbcbmciCmxbAlwegTYSHHLjwWvDs2aAF8fxeRfphwQZKkd
 HekSZ090/c2V4i0ju2M814QyGERMoq+cSlmikCgRWoSZeWOSTj+rAZJyEAzlVL4z
 8ojzOpjmxw6pRYsS0vYIGEDuyiptf+ODC8smTbma/p3Vz+vzyLWPfReQY2RHtpUe
@@ -84,6 +84,8 @@ hwIDAQAB
 6. Bypass the verification by turning on `skip_verification` option, [#85](/../../issues/85).
 
 7. Instead of specifying the `sign_key` directly as a value, you can use a feature introduced in Caddy v2.8.0 to load it from a file using `sign_key {file./path/to/sign_key.txt}`.
+
+8. `log_level` controls the level of the `user authenticated` log line emitted on every successfully authenticated request. It accepts `debug`, `info` (the default), `warn`, or `error`. Production services typically want a single log line per request rather than one per middleware, so setting this to `debug` lets you fold this message into your access log's per-request debug output instead of duplicating it at `info`.
 
 ## How to do integration test of caddy-jwt locally?
 
