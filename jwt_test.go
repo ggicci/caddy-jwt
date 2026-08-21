@@ -257,6 +257,7 @@ func TestAuthenticate_ClockSkew_Exp(t *testing.T) {
 		SignKey:   TestSignKey,
 		logger:    testLogger,
 		ClockSkew: 10, // allow 10 seconds of clock skew
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 
@@ -277,6 +278,7 @@ func TestAuthenticate_ClockSkew_Iat(t *testing.T) {
 		SignKey:   TestSignKey,
 		logger:    testLogger,
 		ClockSkew: 10, // allow 10 seconds of clock skew
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 
@@ -297,6 +299,7 @@ func TestAuthenticate_ClockSkew_Nbf(t *testing.T) {
 		SignKey:   TestSignKey,
 		logger:    testLogger,
 		ClockSkew: 10, // allow 10 seconds of clock skew
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 
@@ -331,7 +334,11 @@ func TestDetermineSigningAlgorithmFallback(t *testing.T) {
 
 func TestAuthenticate_FromAuthorizationHeader(t *testing.T) {
 	claims := MapClaims{"sub": "ggicci"}
-	ja := &JWTAuth{SignKey: TestSignKey, logger: testLogger}
+	ja := &JWTAuth{
+		SignKey: TestSignKey,
+		logger: testLogger,
+		FromHeader: []string{"Authorization"},
+	}
 	assert.Nil(t, ja.Validate())
 
 	rw := httptest.NewRecorder()
@@ -341,11 +348,30 @@ func TestAuthenticate_FromAuthorizationHeader(t *testing.T) {
 	assert.Nil(t, err)
 	assert.True(t, authenticated)
 	assert.Equal(t, User{ID: "ggicci"}, gotUser)
+
+	// "header" not specified
+	ja = &JWTAuth{
+		SignKey:    TestSignKey,
+		logger:     testLogger,
+	}
+	assert.Nil(t, ja.Validate())
+	rw = httptest.NewRecorder()
+	r, _ = http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", issueTokenString(claims))
+	gotUser, authenticated, err = ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.False(t, authenticated)
+	assert.NotEqual(t, User{ID: "ggicci"}, gotUser)
 }
 
 func TestAuthenticate_EdDSA(t *testing.T) {
 	claims := MapClaims{"sub": "ggicci"}
-	ja := &JWTAuth{SignKey: TestSignKeyEd25519, SignAlgorithm: jwa.EdDSA().String(), logger: testLogger}
+	ja := &JWTAuth{
+		SignKey: TestSignKeyEd25519,
+		SignAlgorithm: jwa.EdDSA().String(),
+		logger: testLogger,
+		FromHeader: []string{"Authorization"},
+	}
 	assert.Nil(t, ja.Validate())
 
 	rw := httptest.NewRecorder()
@@ -373,6 +399,15 @@ func TestAuthenticate_FromCustomHeader(t *testing.T) {
 	assert.Nil(t, err)
 	assert.True(t, authenticated)
 	assert.Equal(t, User{ID: "ggicci"}, gotUser)
+
+	// invalid "header"
+	rw = httptest.NewRecorder()
+	r, _ = http.NewRequest("GET", "/", nil)
+	r.Header.Add("Authorization", issueTokenString(claims))
+	gotUser, authenticated, err = ja.Authenticate(rw, r)
+	assert.Nil(t, err)
+	assert.False(t, authenticated)
+	assert.NotEqual(t, User{ID: "ggicci"}, gotUser)
 }
 
 func TestAuthenticate_FromQueryWithSkipVerification(t *testing.T) {
@@ -428,6 +463,7 @@ func TestAuthenticate_PopulateUserMetadataWithSkipVerification(t *testing.T) {
 			"settings.payout.paypal.enabled": "is_paypal_enabled",
 		},
 		logger: testLogger,
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 
@@ -558,6 +594,7 @@ func TestAuthenticate_CustomUserClaims(t *testing.T) {
 		SignKey:    TestSignKey,
 		UserClaims: []string{"username"},
 		logger:     testLogger,
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 	rw := httptest.NewRecorder()
@@ -574,6 +611,7 @@ func TestAuthenticate_CustomUserClaims(t *testing.T) {
 		SignKey:    TestSignKey,
 		UserClaims: []string{"username"},
 		logger:     testLogger,
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 	rw = httptest.NewRecorder()
@@ -590,6 +628,7 @@ func TestAuthenticate_CustomUserClaims(t *testing.T) {
 		SignKey:    TestSignKey,
 		UserClaims: []string{"uid", "user_id"},
 		logger:     testLogger,
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 	rw = httptest.NewRecorder()
@@ -606,6 +645,7 @@ func TestAuthenticate_CustomUserClaims(t *testing.T) {
 		SignKey:    TestSignKey,
 		UserClaims: []string{"user_id", "uid"},
 		logger:     testLogger,
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 	rw = httptest.NewRecorder()
@@ -621,6 +661,7 @@ func TestAuthenticate_ValidateStandardClaims(t *testing.T) {
 	ja := &JWTAuth{
 		SignKey: TestSignKey,
 		logger:  testLogger,
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 
@@ -659,8 +700,8 @@ func TestAuthenticate_VerifyIssuerWhitelist(t *testing.T) {
 	ja := &JWTAuth{
 		SignKey: TestSignKey,
 		logger:  testLogger,
-
 		IssuerWhitelist: []string{"https://api.example.com", "https://api.github.com"},
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 
@@ -708,9 +749,9 @@ func TestAuthenticate_VerifyAudienceWhitelist(t *testing.T) {
 	ja := &JWTAuth{
 		SignKey: TestSignKey,
 		logger:  testLogger,
-
 		IssuerWhitelist:   []string{"https://api.github.com"},
 		AudienceWhitelist: []string{"https://api.codelet.io", "https://api.copilot.codelet.io"},
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 
@@ -782,6 +823,7 @@ func TestAuthenticate_PopulateUserMetadata(t *testing.T) {
 			"settings.payout.alipay.enabled": "is_alipay_enabled",
 		},
 		logger: testLogger,
+		FromHeader: []string{"Authorization"},
 	}
 	assert.Nil(t, ja.Validate())
 
@@ -905,7 +947,12 @@ func Test_desensitizedTokenString(t *testing.T) {
 }
 
 func Test_AsymmetricAlgorithm(t *testing.T) {
-	ja := &JWTAuth{SignKey: TestPubKey, UserClaims: []string{"login"}, logger: testLogger}
+	ja := &JWTAuth{
+		SignKey: TestPubKey,
+		UserClaims: []string{"login"},
+		logger: testLogger,
+		FromHeader: []string{"Authorization"},
+	}
 	assert.Nil(t, ja.Validate())
 	token := "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIzMDc3NTU1IiwibG9naW4iOiJnZ2ljY2kiLCJkaXNwbGF5IjoiR2dpY2NpIiwiYWRtaW4iOmZhbHNlfQ.eOXRUSS-WSebEobZgqmui9VlKentHW5IxQpWR5xGu-u9svzdWJnGqLbnKBeIy42tQkFHNDWUx4R2z8Jv3ZPByN1qvWYIloJ8vLQsb0GsfXoqOPkhsfAzkOEp0m5Ws83ar9TT83MLQrUisKU-WjRZTOid9Hfe2atKN4h74vqpNMUfdRZ4NOZtBTmKjoRdWwNBmM5kg59b_cUKNR9Ruab0dwI72_svFZaNiRzBXLTTOVP2Xn0wk_mavyo4dhP83P66mefSYNkoA4_xft3iG43Zkta5lnjV-EF9fACG8g4pugytDGAgGBsOoKZagIqDdNqQWo1e4CLP4G2kMTfGqlosLQ"
 	rw := httptest.NewRecorder()
@@ -924,7 +971,11 @@ func Test_AsymmetricAlgorithm_InvalidPubKey(t *testing.T) {
 
 func TestJWK(t *testing.T) {
 	time.Sleep(3 * time.Second)
-	ja := &JWTAuth{JWKURL: TestJWKURL, logger: testLogger}
+	ja := &JWTAuth{
+		JWKURL: TestJWKURL,
+		logger: testLogger,
+		FromHeader: []string{"Authorization"},
+	}
 	assert.Nil(t, ja.Validate())
 
 	// Le cache sera créé lors de la première authentification
@@ -952,7 +1003,11 @@ func TestJWK(t *testing.T) {
 
 func TestJWKSet(t *testing.T) {
 	time.Sleep(3 * time.Second)
-	ja := &JWTAuth{JWKURL: TestJWKSetURL, logger: testLogger}
+	ja := &JWTAuth{
+		JWKURL: TestJWKSetURL, 
+		logger: testLogger,
+		FromHeader: []string{"Authorization"},
+	}
 	assert.Nil(t, ja.Validate())
 
 	// Authentifier pour créer le cache
@@ -980,7 +1035,11 @@ func TestJWKSet(t *testing.T) {
 
 func TestJWKSet_KeyNotFound(t *testing.T) {
 	time.Sleep(3 * time.Second)
-	ja := &JWTAuth{JWKURL: TestJWKSetURLInapplicable, logger: testLogger}
+	ja := &JWTAuth{
+		JWKURL: TestJWKSetURLInapplicable,
+		logger: testLogger,
+		FromHeader: []string{"Authorization"},
+	}
 	assert.Nil(t, ja.Validate())
 
 	// Première requête pour créer le cache

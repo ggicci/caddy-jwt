@@ -446,7 +446,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 	candidates = append(candidates, getTokensFromQuery(r, ja.FromQuery)...)
 	candidates = append(candidates, getTokensFromHeader(r, ja.FromHeader)...)
 	candidates = append(candidates, getTokensFromCookies(r, ja.FromCookies)...)
-	candidates = append(candidates, getTokensFromHeader(r, []string{"Authorization"})...)
+
 	checked := make(map[string]struct{})
 
 	for _, candidateToken := range candidates {
