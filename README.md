@@ -24,7 +24,6 @@ xcaddy build --with github.com/ggicci/caddy-jwt
 | v1.1.1            | >=1.25.0   | >=2.10.1      |
 | v1.1.0            | >=1.20.0   | >=2.8.0       |
 
-
 ## Sample Caddyfile
 
 ```Caddyfile
@@ -73,6 +72,8 @@ hwIDAQAB
 ```
 
 3. If you were using **JWK**, configure `jwk_url` and leave `sign_key` unset.
+
+   JWK fetches time out after five seconds. Requests wait for the initial fetch without blocking other resolved JWK URLs. If no keys are available, authentication fails and later requests trigger background retries.
 
 4. `caddy-jwt` will determine the signing algorithm by looking into the following values:
 
@@ -207,7 +208,7 @@ Using multi-line content in a directive [should be quoted](https://caddyserver.c
 
 ## Related Projects
 
-* https://github.com/steffenbusch/caddy-jwt-issuer: A Caddy plugin that issues JWT after username + password authentication
+- https://github.com/steffenbusch/caddy-jwt-issuer: A Caddy plugin that issues JWT after username + password authentication
 
 ## References
 

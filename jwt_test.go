@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
@@ -947,7 +949,9 @@ func TestJWK(t *testing.T) {
 	cachedEntry, exists := ja.jwkCaches[TestJWKURL]
 	assert.True(t, exists, "Le cache devrait exister pour l'URL de test")
 	assert.NotNil(t, cachedEntry)
-	assert.Equal(t, 1, cachedEntry.CachedSet.Len())
+	keySet, lookupErr := cachedEntry.Cache.Lookup(context.Background(), cachedEntry.URL)
+	require.NoError(t, lookupErr)
+	assert.Equal(t, 1, keySet.Len())
 }
 
 func TestJWKSet(t *testing.T) {
@@ -975,7 +979,9 @@ func TestJWKSet(t *testing.T) {
 	cachedEntry, exists := ja.jwkCaches[TestJWKSetURL]
 	assert.True(t, exists, "Le cache devrait exister pour l'URL du set JWK")
 	assert.NotNil(t, cachedEntry)
-	assert.Equal(t, 2, cachedEntry.CachedSet.Len())
+	keySet, lookupErr := cachedEntry.Cache.Lookup(context.Background(), cachedEntry.URL)
+	require.NoError(t, lookupErr)
+	assert.Equal(t, 2, keySet.Len())
 }
 
 func TestJWKSet_KeyNotFound(t *testing.T) {
@@ -1000,10 +1006,157 @@ func TestJWKSet_KeyNotFound(t *testing.T) {
 	cachedEntry, exists := ja.jwkCaches[TestJWKSetURLInapplicable]
 	assert.True(t, exists, "Le cache devrait exister pour l'URL inapplicable")
 	assert.NotNil(t, cachedEntry)
-	assert.Equal(t, 2, cachedEntry.CachedSet.Len())
+	keySet, lookupErr := cachedEntry.Cache.Lookup(context.Background(), cachedEntry.URL)
+	require.NoError(t, lookupErr)
+	assert.Equal(t, 2, keySet.Len())
 
 	// Vérifier que l'authentification a échoué car la clé n'est pas trouvée
 	assert.Error(t, err)
 	assert.False(t, authenticated)
 	assert.Empty(t, gotUser.ID)
+}
+
+func TestJWKFetchFailureRecovery(t *testing.T) {
+	for _, failure := range []string{"404", "500", "invalid JSON", "connection closed"} {
+		t.Run(failure, func(t *testing.T) {
+			var healthy atomic.Bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if healthy.Load() {
+					json.NewEncoder(w).Encode(jwkPubKeySet)
+					return
+				}
+				switch failure {
+				case "404":
+					http.NotFound(w, r)
+				case "500":
+					w.WriteHeader(http.StatusInternalServerError)
+				case "invalid JSON":
+					w.Write([]byte("invalid"))
+				case "connection closed":
+					conn, _, err := w.(http.Hijacker).Hijack()
+					if err == nil {
+						conn.Close()
+					}
+				}
+			}))
+			defer server.Close()
+			ja := &JWTAuth{JWKURL: server.URL, logger: testLogger}
+			require.NoError(t, ja.Validate())
+			defer func() {
+				for _, entry := range ja.jwkCaches {
+					ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+					assert.NoError(t, entry.Cache.Shutdown(ctx))
+					cancel()
+				}
+			}()
+
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+			r.Header.Set("Authorization", "Bearer "+issueTokenStringJWK(MapClaims{"sub": "ggicci"}))
+			_, authenticated, err := ja.Authenticate(httptest.NewRecorder(), r)
+			require.Error(t, err)
+			require.False(t, authenticated)
+			entry := ja.jwkCaches[server.URL]
+			require.NotNil(t, entry)
+
+			// More failures than the worker pool size must still allow recovery.
+			for range 10 {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				assert.Error(t, entry.refresh(ctx, testLogger))
+				assert.NoError(t, ctx.Err())
+				cancel()
+			}
+			_, authenticated, err = ja.Authenticate(httptest.NewRecorder(), r)
+			require.Error(t, err)
+			require.False(t, authenticated)
+
+			healthy.Store(true)
+			require.Eventually(t, func() bool {
+				user, authenticated, err := ja.Authenticate(httptest.NewRecorder(), r)
+				return err == nil && authenticated && user.ID == "ggicci"
+			}, time.Second, 10*time.Millisecond)
+
+			// A later outage must leave the last successfully fetched keys usable.
+			healthy.Store(false)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			require.Error(t, entry.refresh(ctx, testLogger))
+			user, authenticated, err := ja.Authenticate(httptest.NewRecorder(), r)
+			require.NoError(t, err)
+			require.True(t, authenticated)
+			assert.Equal(t, "ggicci", user.ID)
+		})
+	}
+}
+
+func TestJWKInitialFetchBoundedAndIsolated(t *testing.T) {
+	started := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/slow" {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-r.Context().Done()
+			return
+		}
+		json.NewEncoder(w).Encode(jwkPubKeySet)
+	}))
+	defer server.Close()
+	ja := &JWTAuth{JWKURL: server.URL + "/{key_path}", logger: testLogger}
+	require.NoError(t, ja.Validate())
+	defer func() {
+		for _, entry := range ja.jwkCaches {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			assert.NoError(t, entry.Cache.Shutdown(ctx))
+			cancel()
+		}
+	}()
+	token := issueTokenStringJWK(MapClaims{"sub": "ggicci"})
+	request := func(ctx context.Context, path string) *http.Request {
+		repl := caddy.NewReplacer()
+		repl.Set("key_path", path)
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r = r.WithContext(context.WithValue(ctx, caddy.ReplacerCtxKey, repl))
+		r.Header.Set("Authorization", "Bearer "+token)
+		return r
+	}
+	type result struct {
+		authenticated bool
+		err           error
+	}
+	done := make(chan result, 1)
+	go func() {
+		_, authenticated, err := ja.Authenticate(httptest.NewRecorder(), request(context.Background(), "slow"))
+		done <- result{authenticated, err}
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("initial fetch did not start")
+	}
+
+	// A request waiting for the same initial fetch can cancel independently.
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, authenticated, err := ja.Authenticate(httptest.NewRecorder(), request(ctx, "slow"))
+	require.Error(t, err)
+	require.False(t, authenticated)
+	require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+
+	// A different resolved URL must authenticate while the first fetch is stalled.
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	user, authenticated, err := ja.Authenticate(httptest.NewRecorder(), request(ctx, "keys"))
+	require.NoError(t, err)
+	require.True(t, authenticated)
+	assert.Equal(t, "ggicci", user.ID)
+
+	select {
+	case got := <-done:
+		assert.Error(t, got.err)
+		assert.False(t, got.authenticated)
+	case <-time.After(jwkFetchTimeout + time.Second):
+		t.Fatal("initial fetch exceeded its timeout")
+	}
 }
