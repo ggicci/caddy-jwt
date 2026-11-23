@@ -18,6 +18,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -343,6 +344,95 @@ func TestAuthenticate_FromAuthorizationHeader(t *testing.T) {
 	assert.Nil(t, err)
 	assert.True(t, authenticated)
 	assert.Equal(t, User{ID: "ggicci"}, gotUser)
+}
+
+func TestAuthenticate_DisableAuthorizationFallback(t *testing.T) {
+	token := issueTokenString(MapClaims{"sub": "ggicci"})
+	for _, tc := range []struct {
+		name          string
+		disable       bool
+		explicit      bool
+		cookie        bool
+		authorization string
+		authenticated bool
+	}{
+		{name: "default fallback", authorization: "Bearer " + token, authenticated: true},
+		{name: "disabled fallback", disable: true, authorization: "Bearer " + token},
+		{name: "explicit header", disable: true, explicit: true, authorization: "Bearer " + token, authenticated: true},
+		{name: "cookie and Basic", disable: true, cookie: true, authorization: "Basic dXNlcjpwYXNz", authenticated: true},
+		{name: "Basic without cookie", disable: true, authorization: "Basic dXNlcjpwYXNz"},
+		{name: "API key without cookie", disable: true, authorization: "Bearer key_aaaabbbbccccddddeeeeffff"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			core, logs := observer.New(zapcore.DebugLevel)
+			ja := &JWTAuth{
+				SignKey: TestSignKey, FromCookies: []string{"gate"},
+				DisableAuthorizationFallback: tc.disable, logger: zap.New(core),
+			}
+			if tc.explicit {
+				ja.FromHeader = []string{"Authorization"}
+			}
+			require.NoError(t, ja.Validate())
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.Header.Set("Authorization", tc.authorization)
+			if tc.cookie {
+				r.AddCookie(&http.Cookie{Name: "gate", Value: token})
+			}
+			user, authenticated, err := ja.Authenticate(httptest.NewRecorder(), r)
+			require.NoError(t, err)
+			assert.Equal(t, tc.authenticated, authenticated)
+			assert.Empty(t, logs.FilterMessage("invalid token").All())
+			if tc.authenticated {
+				assert.Equal(t, "ggicci", user.ID)
+			} else {
+				assert.Empty(t, user.ID)
+			}
+		})
+	}
+}
+
+func TestAuthenticate_LogsOmitTokenString(t *testing.T) {
+	malformedClaims, err := jws.Sign([]byte(`{"sub":"ggicci","exp":"private-credential-value"}`), jws.WithKey(jwa.HS256(), RawTestSignKey))
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name          string
+		token         string
+		wantError     string
+		authenticated bool
+	}{
+		{name: "short credential", token: "abc123"},
+		{name: "opaque API key", token: "key_aaaabbbbccccddddeeeeffff"},
+		{name: "Basic", token: "Basic dXNlcjpwYXNz"},
+		{name: "malformed claims", token: string(malformedClaims), wantError: "private-credential-value"},
+		{name: "expired JWT", token: issueTokenString(MapClaims{"sub": "ggicci", "exp": 689702400})},
+		{name: "valid JWT", token: issueTokenString(MapClaims{"sub": "ggicci"}), authenticated: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			core, logs := observer.New(zapcore.DebugLevel)
+			ja := &JWTAuth{SignKey: TestSignKey, logger: zap.New(core)}
+			require.NoError(t, ja.Validate())
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.Header.Set("Authorization", tc.token)
+			_, authenticated, err := ja.Authenticate(httptest.NewRecorder(), r)
+			assert.Equal(t, tc.authenticated, authenticated)
+			if tc.authenticated {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, jwt.ParseError())
+				if tc.wantError != "" {
+					assert.Contains(t, err.Error(), tc.wantError)
+				}
+			}
+			entries := logs.All()
+			require.Len(t, entries, 1)
+			fields := entries[0].ContextMap()
+			assert.NotContains(t, fields, "token_string")
+			if !tc.authenticated {
+				assert.Equal(t, err.Error(), fields["error"])
+			}
+		})
+	}
 }
 
 func TestAuthenticate_EdDSA(t *testing.T) {
@@ -878,31 +968,6 @@ func Test_stringify(t *testing.T) {
 		{ThingIsStringer{}, "i'm stringer"}, // support fmt.Stringer interface
 	} {
 		assert.Equal(t, stringify(c.Input), c.Expected)
-	}
-}
-
-func Test_desensitizedTokenString(t *testing.T) {
-	for _, c := range []struct {
-		Input    string
-		Expected string
-	}{
-		{"", ""},
-		{"abc", "abc"},
-		{"abcdef", "abcdef"},
-		{"abcdefg", "ab…fg"},
-		{"abcdefeijk", "abc…ijk"},
-		{"abcdefghijklmnopqrstuvwxyz", "abcdefgh…stuvwxyz"},
-		{"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv", "abcdefghijklmnop…ghijklmnopqrstuv"},
-		{
-			"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz",
-			"abcdefghijklmnop…klmnopqrstuvwxyz",
-		},
-		{
-			"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz",
-			"abcdefghijklmnop…klmnopqrstuvwxyz",
-		},
-	} {
-		assert.Equal(t, desensitizedTokenString(c.Input), c.Expected)
 	}
 }
 

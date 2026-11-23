@@ -1,6 +1,7 @@
 package caddyjwt
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -8,7 +9,25 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/caddyauth"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestParsingCaddyfileDisableAuthorizationFallback(t *testing.T) {
+	for _, option := range []string{"", "disable_authorization_fallback"} {
+		helper := httpcaddyfile.Helper{Dispenser: caddyfile.NewTestDispenser("jwtauth {\n" + option + "\n}")}
+		handler, err := parseCaddyfile(helper)
+		require.NoError(t, err)
+		auth := handler.(caddyauth.Authentication)
+		var config JWTAuth
+		require.NoError(t, json.Unmarshal(auth.ProvidersRaw["jwt"], &config))
+		assert.Equal(t, option != "", config.DisableAuthorizationFallback)
+	}
+	for _, option := range []string{"disable_authorization_fallback true", "disable_authorization_fallback false"} {
+		helper := httpcaddyfile.Helper{Dispenser: caddyfile.NewTestDispenser("jwtauth {\n" + option + "\n}")}
+		_, err := parseCaddyfile(helper)
+		require.Error(t, err)
+	}
+}
 
 func TestParsingCaddyfileNormalCase(t *testing.T) {
 	helper := httpcaddyfile.Helper{
