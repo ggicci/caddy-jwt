@@ -34,15 +34,41 @@ func init() {
 type User = caddyauth.User
 type Token = jwt.Token
 
+const jwkFetchTimeout = 5 * time.Second
+
 // jwkCacheEntry stores the JWK cache information for a specific URL
 type jwkCacheEntry struct {
-	URL       string
-	Cache     *jwk.Cache
-	CachedSet jwk.Set
+	URL   string
+	Cache *jwk.Cache
+
+	initialize sync.Once
+	ready      chan struct{}
+}
+
+func (entry *jwkCacheEntry) lookup(ctx context.Context, logger *zap.Logger) (jwk.Set, error) {
+	ctx, cancel := context.WithTimeout(ctx, jwkFetchTimeout)
+	defer cancel()
+
+	// Share the initial fetch without tying it to one request's cancellation.
+	entry.initialize.Do(func() {
+		go func() {
+			defer close(entry.ready)
+			_ = entry.refresh(context.Background(), logger)
+		}()
+	})
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-entry.ready:
+		return entry.Cache.Lookup(ctx, entry.URL)
+	}
 }
 
 // refresh refreshes the JWK cache for this entry
 func (entry *jwkCacheEntry) refresh(ctx context.Context, logger *zap.Logger) error {
+	ctx, cancel := context.WithTimeout(ctx, jwkFetchTimeout)
+	defer cancel()
+
 	_, err := entry.Cache.Refresh(ctx, entry.URL)
 	if err != nil {
 		logger.Warn("failed to refresh JWK cache", zap.Error(err), zap.String("url", entry.URL))
@@ -233,7 +259,7 @@ func (ja *JWTAuth) setupJWKLoader() {
 }
 
 // getOrCreateJWKCache retrieves or creates a cache for a specific JWK URL
-func (ja *JWTAuth) getOrCreateJWKCache(resolvedURL string) (*jwkCacheEntry, error) {
+func (ja *JWTAuth) getOrCreateJWKCache(ctx context.Context, resolvedURL string) (*jwkCacheEntry, error) {
 	// If the URL is empty, return an error
 	if resolvedURL == "" {
 		return nil, fmt.Errorf("resolved JWK URL is empty")
@@ -258,40 +284,28 @@ func (ja *JWTAuth) getOrCreateJWKCache(resolvedURL string) (*jwkCacheEntry, erro
 	}
 
 	// Create a new cache for this URL
-	client := httprc.NewClient(httprc.WithErrorSink(errsink.NewFunc(func(_ context.Context, err error) {
+	client := httprc.NewClient(httprc.WithHTTPClient(&http.Client{Timeout: jwkFetchTimeout}), httprc.WithErrorSink(errsink.NewFunc(func(_ context.Context, err error) {
 		ja.Error(err)
 	})))
 	cache, err := jwk.NewCache(context.Background(), client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create JWK cache: %w", err)
 	}
-	err = cache.Register(context.Background(), resolvedURL)
+	err = cache.Register(ctx, resolvedURL, jwk.WithWaitReady(false))
 	if err != nil {
+		_ = cache.Shutdown(context.Background())
 		return nil, fmt.Errorf("failed to register JWK URL: %w", err)
 	}
 
-	cachedSet, err := cache.CachedSet(resolvedURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cached JWK set: %w", err)
-	}
-
-	// Create cache entry before attempting refresh
 	entry = &jwkCacheEntry{
-		URL:       resolvedURL,
-		Cache:     cache,
-		CachedSet: cachedSet,
-	}
-
-	// Try to refresh the cache immediately
-	err = entry.refresh(context.Background(), ja.logger)
-	if err != nil {
-		ja.logger.Warn("failed to refresh JWK cache during initialization", zap.Error(err), zap.String("url", resolvedURL))
-		// Continue even in case of error, the important thing is that the URL is registered
+		URL:   resolvedURL,
+		Cache: cache,
+		ready: make(chan struct{}),
 	}
 
 	// Register the entry in the cache
 	ja.jwkCaches[resolvedURL] = entry
-	ja.logger.Info("new JWK cache created", zap.String("url", resolvedURL), zap.Int("loaded_keys", entry.CachedSet.Len()))
+	ja.logger.Info("new JWK cache created", zap.String("url", resolvedURL))
 
 	return entry, nil
 }
@@ -386,14 +400,21 @@ func (ja *JWTAuth) keyProvider(request *http.Request) jws.KeyProviderFunc {
 			ja.logger.Info("JWK URL", zap.String("unresolved", ja.JWKURL), zap.String("resolved", resolvedURL))
 
 			// Get or create the cache for this URL
-			cacheEntry, err := ja.getOrCreateJWKCache(resolvedURL)
+			cacheEntry, err := ja.getOrCreateJWKCache(request.Context(), resolvedURL)
 			if err != nil {
 				return fmt.Errorf("failed to get JWK cache: %w", err)
 			}
 
 			// Use the key set associated with this URL
+			keySet, err := cacheEntry.lookup(request.Context(), ja.logger)
+			if err != nil {
+				if request.Context().Err() == nil {
+					go cacheEntry.refresh(context.Background(), ja.logger)
+				}
+				return fmt.Errorf("failed to load JWKs: %w", err)
+			}
 			kid, _ := sig.ProtectedHeaders().KeyID()
-			key, found := cacheEntry.CachedSet.LookupKeyID(kid)
+			key, found := keySet.LookupKeyID(kid)
 			if !found {
 				// Trigger an asynchronous refresh if the key is not found
 				go cacheEntry.refresh(context.Background(), ja.logger)
