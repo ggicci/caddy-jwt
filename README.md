@@ -81,7 +81,19 @@ hwIDAQAB
    2. `alg` value of the matched JWK if using JWK;
    3. value of the `sign_alg` config.
 
-5. The priority of `from_xxx` is `from_query > from_header > from_cookies`.
+5. The priority of `from_xxx` is `from_query > from_header > from_cookies`. The `Authorization` header is checked as a final fallback by default. Add `disable_authorization_fallback` to use only configured token sources; an explicit `from_header Authorization` still works.
+
+   For cookie authentication alongside Basic Auth or API keys:
+
+   ```Caddyfile
+   jwtauth {
+       sign_key <base64-encoded-key>
+       from_cookies gate
+       disable_authorization_fallback
+   }
+   ```
+
+   Authentication logs no longer include the `token_string` field. Existing error messages are unchanged.
 
 6. Bypass the verification by turning on `skip_verification` option, [#85](/../../issues/85).
 
@@ -120,7 +132,7 @@ TEST_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjk5NTU4OTI2NzAsImp0aSI6
 curl -v "http://localhost:8080?access_token=${TEST_TOKEN}"
 # You should see
 # 1. caddy log:
-#   http.authentication.providers.jwt       user authenticated      {"token_string": "eyJhbGciOiJIUzI1…Qhkntf78O9kF71F8", "user_claim": "username", "id": "ggicci"}
+#   http.authentication.providers.jwt       user authenticated      {"user_claim": "username", "id": "ggicci"}
 #
 # 2. request response (curl command output):
 # User Authenticated with ID: ggicci

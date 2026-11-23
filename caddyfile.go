@@ -55,6 +55,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				}
 			case "skip_verification":
 				ja.SkipVerification = true
+			case "disable_authorization_fallback":
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				ja.DisableAuthorizationFallback = true
 			case "log_level":
 				if !h.AllArgs(&ja.LogLevel) {
 					return nil, h.Errf("invalid log_level: %q", ja.LogLevel)

@@ -147,6 +147,10 @@ type JWTAuth struct {
 	// from the HTTP cookies.
 	FromCookies []string `json:"from_cookies"`
 
+	// DisableAuthorizationFallback disables the implicit Authorization header check.
+	// An explicit from_header Authorization is still honored.
+	DisableAuthorizationFallback bool `json:"disable_authorization_fallback,omitempty"`
+
 	// IssuerWhitelist defines a list of issuers. A non-empty list turns on "iss
 	// verification": the "iss" claim must exist in the given JWT payload. And
 	// the value of the "iss" claim must be on the whitelist in order to pass
@@ -467,7 +471,9 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 	candidates = append(candidates, getTokensFromQuery(r, ja.FromQuery)...)
 	candidates = append(candidates, getTokensFromHeader(r, ja.FromHeader)...)
 	candidates = append(candidates, getTokensFromCookies(r, ja.FromCookies)...)
-	candidates = append(candidates, getTokensFromHeader(r, []string{"Authorization"})...)
+	if !ja.DisableAuthorizationFallback {
+		candidates = append(candidates, getTokensFromHeader(r, []string{"Authorization"})...)
+	}
 	checked := make(map[string]struct{})
 
 	for _, candidateToken := range candidates {
@@ -489,9 +495,8 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 
 		checked[tokenString] = struct{}{}
 
-		logger := ja.logger.With(zap.String("token_string", desensitizedTokenString(tokenString)))
 		if err != nil {
-			logger.Error("invalid token", zap.Error(err))
+			ja.logger.Error("invalid token", zap.Error(err))
 			continue
 		}
 
@@ -511,7 +516,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 			}
 			if !isValidIssuer {
 				err = ErrInvalidIssuer
-				logger.Error("invalid token", zap.Error(err))
+				ja.logger.Error("invalid token", zap.Error(err))
 				continue
 			}
 		}
@@ -526,7 +531,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 			}
 			if !isValidAudience {
 				err = ErrInvalidAudience
-				logger.Error("invalid token", zap.Error(err))
+				ja.logger.Error("invalid token", zap.Error(err))
 				continue
 			}
 		}
@@ -535,7 +540,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 		claimName, gotUserID := getUserID(gotToken, ja.UserClaims)
 		if gotUserID == "" {
 			err = ErrEmptyUserClaim
-			logger.Error("invalid token", zap.Strings("user_claims", ja.UserClaims), zap.Error(err))
+			ja.logger.Error("invalid token", zap.Strings("user_claims", ja.UserClaims), zap.Error(err))
 			continue
 		}
 
@@ -544,7 +549,7 @@ func (ja *JWTAuth) Authenticate(rw http.ResponseWriter, r *http.Request) (User, 
 			ID:       gotUserID,
 			Metadata: getUserMetadata(gotToken, ja.MetaClaims),
 		}
-		logger.Log(ja.logLevel, "user authenticated", zap.String("user_claim", claimName), zap.String("id", gotUserID))
+		ja.logger.Log(ja.logLevel, "user authenticated", zap.String("user_claim", claimName), zap.String("id", gotUserID))
 		return user, true, nil
 	}
 
@@ -703,17 +708,6 @@ func stringifySlice(slice []interface{}) string {
 		result = append(result, stringify(val))
 	}
 	return strings.Join(result, ",")
-}
-
-func desensitizedTokenString(token string) string {
-	if len(token) <= 6 {
-		return token
-	}
-	mask := len(token) / 3
-	if mask > 16 {
-		mask = 16
-	}
-	return token[:mask] + "…" + token[len(token)-mask:]
 }
 
 // parseSignKey parses the given key and returns the key bytes.
