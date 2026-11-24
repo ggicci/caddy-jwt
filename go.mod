@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	github.com/caddyserver/caddy/v2 v2.10.2
-	github.com/lestrrat-go/httprc/v3 v3.0.4
+	github.com/lestrrat-go/httprc/v3 v3.0.6
 	github.com/lestrrat-go/jwx/v3 v3.0.13
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.0
